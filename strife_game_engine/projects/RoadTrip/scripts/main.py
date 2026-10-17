@@ -15,8 +15,11 @@ SCALE, OX, OY = 60, 60, 420
 CAMERA_READY = False
 SPEED, EPS = 4.0, 0.02
 MARKER_RADIUS = .25
+# Keep a small amount of car clearance without making the collision area feel
+# much larger than the visible tree.
+WALL_HITBOX_PAD = .08
 Y_MIN, Y_MAX = -1.5, 7.0
-
+TREE_W, TREE_H = 420, 680
 
 def to_px(x, y): return OX + x * SCALE, OY - y * SCALE
 def to_x(px): return (px - OX) / SCALE
@@ -36,14 +39,12 @@ def set_msg(text, kind="info"):
 
 
 # ---------- Game page ----------
-Page.Open("GameFJ")
+Page.Open("Game")
 top = UI.Frame(0, 0, W, GTOP); top.bg = "dark"
 title = UI.Text("", 16, 11, 26); title.color = "white"
 readout = UI.Text("", 520, 16, 20); readout.color = "#ffd25a"
 fuel_readout = UI.Text("", 380, 16, 20); fuel_readout.color = "#8af08a"
-projects_btn = UI.Button("Projects", 580, 8, 120, 34)
-fullscreen_btn = UI.Button("Fullscreen", 710, 8, 120, 34)
-menu_btn = UI.Button("Menu", 840, 8, 110, 34)
+menu_btn = UI.Button("Modes", 840, 8, 110, 34)
 bottom = UI.Frame(0, GBOT, W, H - GBOT); bottom.bg = "panel"
 msg = UI.Text("", 16, 468, 18)
 drive_btn = UI.Button("Drive!", 556, 494, 120, 38)
@@ -60,76 +61,103 @@ for number in range(1):
     range_ = UI.Input("{yeR}", 0, 0, 150, 30); range_.text = "{yeR}"
     end_rows.append((label, formula, domain, range_))
 Theme.Set("modern")
-for _b, _c in ((projects_btn, "#495057"), (fullscreen_btn, "#495057"), (menu_btn, "#495057"),
+for _b, _c in ((menu_btn, "#495057"),
                (drive_btn, "#2f9e44"), (reset_btn, "#868e96"), (next_btn, "#1971c2"),
                (restart_btn, "#2f9e44"), (result_menu_btn, "#495057")):
     _b.bg, _b.color = _c, "white"
 
 
-# ---------- Mode and level menus ----------
+# ---------- Opening and mode selector ----------
+Page.Open("Intro")
+intro_bg = UI.Frame(0, 0, W, H); intro_bg.bg = "#ffffff"
+intro_letters = []
+for i, letter in enumerate("STRIFE!"):
+    # Each letter has its own tween, so the word lands one character at a time.
+    start_x, finish_x = 90 + i * 125, 245 + i * 70
+    glyph = UI.Text(letter, start_x, 150, 230)
+    glyph.color = "#212529"
+    glyph.visible = False
+    intro_letters.append((glyph, start_x, finish_x))
+
 Page.Open("Menu")
-mode_title = UI.Text("Road Trip", 0, 35, 64); mode_title.color = "#ffd25a"
-mode_hint = UI.Text("Choose a game mode", 0, 115, 26); mode_hint.color = "white"
-fj_mode_btn = UI.Button("Function Junction", 0, 185, 460, 60)
+menu_bg = UI.Frame(0, 0, W, H); menu_bg.bg = "#ffffff"
+menu_title = UI.Text("STRIFE!", 42, -145, 78); menu_title.color = "#212529"
+menu_subtitle = UI.Text("Choose a game mode", 46, -60, 22); menu_subtitle.color = "#6c757d"
+fj_mode_btn = UI.Button("Function Junction", W + 20, 225, 290, 64)
 fj_mode_btn.bg, fj_mode_btn.color = "#1971c2", "white"
 fj_mode_btn.on_click = lambda: Page.Open("FunctionJunctionMenu")
-bd_mode_btn = UI.Button("Bomb Defusal", 0, 260, 460, 60)
+bd_mode_btn = UI.Button("Bomb Defusal", W + 20, 310, 290, 64)
 bd_mode_btn.bg, bd_mode_btn.color = "#c92a2a", "white"
-mode_endless_btn = UI.Button("Endless Road", 0, 335, 460, 60)
-mode_endless_btn.bg, mode_endless_btn.color = "#2f9e44", "white"
-mode_endless_btn.on_click = lambda: start_endless()
-back_b = UI.Button("Back to Strife Menu", 20, 20, 230, 42); back_b.on_click = Projects.Home
+bd_mode_btn.on_click = lambda: Page.Open("GameBD")
 
 
-def start_bomb():
-    Page.Open("GameBD")
-    restart = UI.Get("BombRestart")
-    if restart is not None and callable(restart.on_click): restart.on_click()
-
-
-bd_mode_btn.on_click = start_bomb
+# ---------- Function Junction level selector ----------
 Page.Open("FunctionJunctionMenu")
-level_title = UI.Text("Function Junction", 0, 25, 42); level_title.color = "#ffd25a"
-level_hint = UI.Text("Write y = f(x) to guide the car to the flag.", 0, 80, 20)
-level_hint.color = "#cfd8e3"
-level_buttons = []
+UI.Text("Function Junction", 300, 40, 48).color = "#ffd25a"
+UI.Text("Choose a level or try Endless mode.", 260, 105, 20).color = "#cfd8e3"
 for i, lv in enumerate(LEVELS):
-    button = UI.Button(lv["name"] + "  -  " + lv["concept"], 0, 0, 520, 40)
-    button.bg, button.color = "#1971c2", "white"
-    button.on_click = (lambda n: lambda: start_level(n))(i)
-    level_buttons.append(button)
-endless_b = UI.Button("Endless Road", 0, 0, 250, 42)
-endless_b.bg, endless_b.color = "#2f9e44", "white"
-fj_back_btn = UI.Button("Back to modes", 20, 20, 160, 40)
-fj_back_btn.bg, fj_back_btn.color = "#495057", "white"
-fj_back_btn.on_click = lambda: Page.Open("Menu")
+    b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 165 + i * 48, 460, 42)
+    b.bg, b.color = "#1971c2", "white"
+    b.on_click = (lambda n: lambda: start_level(n))(i)
+endless_b = UI.Button("Endless", 350, 165 + len(LEVELS) * 48, 250, 42)
+endless_b.bg, endless_b.color = "#194323", "white"
+back_b = UI.Button("Back to modes", 20, 482, 170, 42)
+back_b.bg, back_b.color = "#495057", "white"
+back_b.on_click = lambda: Page.Open("Menu")
 Page.Open("Menu")
 
 
-def layout_menus():
-    mode_title.x, mode_hint.x = W / 2 - 180, W / 2 - 145
-    for button in (fj_mode_btn, bd_mode_btn, mode_endless_btn): button.x = W / 2 - 230
-    level_title.x, level_hint.x = W / 2 - 210, W / 2 - 230
-    columns = 2 if H < 760 else 1
-    rows = math.ceil(len(level_buttons) / columns)
-    column_width = min(560, (W - 40) / columns)
-    button_height = max(26, min(44, (H - 205) / rows - 8))
-    for i, button in enumerate(level_buttons):
-        column, row = divmod(i, rows)
-        button.x = W / 2 - columns * column_width / 2 + column * column_width + 8
-        button.y, button.w, button.h = 120 + row * (button_height + 8), column_width - 16, button_height
-    endless_b.x, endless_b.y = W / 2 - 125, H - 62
+MENU_TITLE_Y = 62
+menu_hovering = False
+menu_hover_time = 0.0
+
+
+def start_menu_hover():
+    global menu_hovering, menu_hover_time
+    menu_hovering, menu_hover_time = True, 0.0
+
+
+def show_main_menu():
+    global menu_hovering
+    menu_hovering = False
+    Page.Open("Menu")
+    menu_title.x, menu_title.y = 42, -145
+    menu_subtitle.x, menu_subtitle.y = 46, -60
+    fj_mode_btn.x, bd_mode_btn.x = W + 20, W + 20
+    Tween(menu_title, "y", MENU_TITLE_Y, .62, "out", start_menu_hover)
+    Tween(menu_subtitle, "y", 154, .62, "out")
+    Tween(fj_mode_btn, "x", 615, .62, "out")
+    Tween(bd_mode_btn, "x", 615, .74, "out")
+
+
+def finish_intro():
+    for glyph, _, _ in intro_letters:
+        Tween(glyph, "y", -260, .42, "inout")
+    After(.34, show_main_menu)
+
+
+def start_intro():
+    Page.Open("Intro")
+    for i, (glyph, start_x, finish_x) in enumerate(intro_letters):
+        glyph.x, glyph.y, glyph.size = start_x, 150, 230
+        glyph.visible = False
+        delay = i * .055
+        def slam(glyph=glyph, finish_x=finish_x):
+            glyph.visible = True
+            Tween(glyph, "x", finish_x, .17, "out")
+            Tween(glyph, "size", 115, .17, "out")
+        After(delay, slam)
+    After(.54, finish_intro)
 
 
 def all_game_widgets():
-    return [top, bottom, title, readout, fuel_readout, projects_btn, fullscreen_btn, menu_btn, msg,
+    return [top, bottom, title, readout, fuel_readout, menu_btn, msg,
             drive_btn, reset_btn, next_btn, endless_hint, restart_btn, result_menu_btn] + [w for r in end_rows for w in r]
 
 
 def layout_window():
-    global W, H, GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
-    W, H = Window.width(), Window.height()
-    layout_menus()
+    global GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
+    # This Strife build uses a fixed 960x540 window and exposes no Window API.
     GTOP = max(50, round(H * .09))
     if S["endless"]:
         panel_height = 150 if E["game_over"] else 58 + E["row_count"] * 34
@@ -140,10 +168,10 @@ def layout_window():
         OX, OY, SCALE, CAMERA_READY = max(60, round(W * .065)), GBOT - 40, 60, True
     top.w = bottom.w = W; bottom.y, bottom.h = GBOT, H - GBOT
     readout.x, fuel_readout.x = max(250, W - 430), max(170, W - 570)
-    projects_btn.x, fullscreen_btn.x, menu_btn.x = W - 390, W - 260, W - 130
-    in_game, normal = Page.Current() == "GameFJ", not S["endless"]
+    menu_btn.x = W - 130
+    in_game, normal = Page.Current() == "Game", not S["endless"]
     for w in all_game_widgets(): w.visible = False
-    for w in (top, bottom, title, readout, fuel_readout, projects_btn, fullscreen_btn, menu_btn, msg): w.visible = in_game
+    for w in (top, bottom, title, readout, fuel_readout, menu_btn, msg): w.visible = in_game
     if in_game:
         msg.y = GBOT + 8
         if S["endless"] and E["game_over"]:
@@ -169,15 +197,16 @@ def layout_window():
 
 def update_camera():
     global OX, OY, SCALE
-    mx, my = Input.mouse_x(), Input.mouse_y(); on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
-    if Input.mouse_pressed() and on_graph: S["pan"] = (mx, my, OX, OY)
+    mx, my = Input.mouse_x(), Input.mouse_y()
+    down = Input.mouse_down()
+    just_pressed = down and not S.get("mouse_down", False)
+    S["mouse_down"] = down
+    on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
+    if just_pressed and on_graph: S["pan"] = (mx, my, OX, OY)
     if S["pan"]:
-        if Input.mouse_down():
+        if down:
             sx, sy, ox, oy = S["pan"]; OX, OY = ox + mx - sx, oy + my - sy
         else: S["pan"] = None
-    zoom = Input.mouse_wheel() + Input.pinch()
-    if on_graph and zoom:
-        x, y = to_x(mx), (OY - my) / SCALE; SCALE = max(24, min(220, SCALE * 1.15 ** zoom)); OX, OY = mx - x * SCALE, my + y * SCALE
 
 
 # ---------- Endless constraints and routes ----------
@@ -341,7 +370,7 @@ def start_endless():
     S["active"], S["ys"], S["road_ys"] = [], [], []
     clear_endless_rows(); generate_checkpoint(); title.text, fuel_readout.text = "Endless Road", "Fuel: 100"
     endless_hint.text = "Build roads to the flag. Fuel cost is based on each function's domain."
-    set_msg("Checkpoint 1: reach x=%g, y=%g." % E["goal"]); Page.Open("GameFJ")
+    set_msg("Checkpoint 1: reach x=%g, y=%g." % E["goal"]); Page.Open("Game")
 
 
 # ---------- Normal levels ----------
@@ -351,11 +380,13 @@ def start_level(i):
              active=[], history=[], start=level_start, drive_end=level_start[0], missed_checkpoint=False)
     S["cx"], S["cy"] = level_start
     clear_normal_rows(); title.text, readout.text, fuel_readout.text = LEVELS[i]["name"], "", ""
-    set_msg(LEVELS[i]["hint"]); Page.Open("GameFJ")
+    set_msg(LEVELS[i]["hint"]); Page.Open("Game")
 
 
 def hits_wall(x, y):
-    return any(x1 - .25 < x < x2 + .25 and y1 - .25 < y < y2 + .25 for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"])
+    pad = WALL_HITBOX_PAD
+    return any(x1 - pad < x < x2 + pad and y1 - pad < y < y2 + pad
+               for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"])
 
 
 def drive_endless():
@@ -433,15 +464,20 @@ def reset_current():
 drive_btn.on_click = drive; reset_btn.on_click = reset_current
 for _, formula_input, _, _ in end_rows: formula_input.on_submit = lambda text: drive()
 next_btn.on_click = lambda: start_level(min(S["level"] + 1, len(LEVELS) - 1))
-menu_btn.on_click = lambda: Page.Open("Menu"); fullscreen_btn.on_click = Window.toggle_fullscreen; projects_btn.on_click = Projects.Home
+menu_btn.on_click = lambda: Page.Open("Menu")
 endless_b.on_click = start_endless
 restart_btn.on_click = start_endless; result_menu_btn.on_click = lambda: Page.Open("Menu")
 layout_window()
+start_intro()
 
 
 def on_update(dt):
+    global menu_hover_time
     layout_window()
-    if Page.Current() != "GameFJ": return
+    if Page.Current() == "Menu" and menu_hovering:
+        menu_hover_time += dt
+        menu_title.y = MENU_TITLE_Y + math.sin(menu_hover_time * 1.7) * 4
+    if Page.Current() != "Game": return
     update_camera(); refresh_curve()
     if S["mode"] != "driving": return
     remaining = SPEED * dt
@@ -488,7 +524,7 @@ def draw_car(px, py):
 
 
 def on_draw():
-    if Page.Current() != "GameFJ": return
+    if Page.Current() != "Game": return
     box(0, GTOP, W, GBOT - GTOP, "#fbfcfe")
     min_x, max_x = math.floor(to_x(0)) - 1, math.ceil(to_x(W)) + 1
     min_y, max_y = math.floor((OY - GBOT) / SCALE) - 1, math.ceil((OY - GTOP) / SCALE) + 1
@@ -500,10 +536,23 @@ def on_draw():
         if gx and not gx % every: px, _ = to_px(gx, 0); Draw.text(str(gx), px - 4, label_y, 14, "#6c757d")
     for gy in range(min_y, max_y + 1):
         if gy and not gy % every: _, py = to_px(0, gy); Draw.text(str(gy), label_x, py - 8, 14, "#6c757d")
-    if S["endless"]: start, goal = E["start"], E["goal"]
+    if S["endless"]:
+        start, goal = E["start"], E["goal"]
     else:
         for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"]:
-            ax, ay = to_px(x1, y2); bx, by = to_px(x2, y1); box(ax, ay, bx - ax, by - ay, "#c92a2a"); box(ax, ay, bx - ax, 3, "#e03131")
+            ax, ay = to_px(x1, y2)
+            bx, by = to_px(x2, y1)
+            obstacle_w, obstacle_h = bx - ax, by - ay
+            scale = min(obstacle_w / TREE_W, obstacle_h / TREE_H)
+            image_w, image_h = TREE_W * scale, TREE_H * scale
+            # Upper barriers grow down from the graph's top edge.
+            upper_barrier = (y1 + y2) / 2 > (Y_MIN + Y_MAX) / 2
+            Draw.image(
+                "tree_top.png" if upper_barrier else "tree.png",
+                ax + (obstacle_w - image_w) / 2,
+                ay if upper_barrier else by - image_h,
+                scale,
+            )
         start, goal = S["start"], LEVELS[S["level"]]["goal"]
     for road in S["road_ys"]:
         for px in range(W - 1):

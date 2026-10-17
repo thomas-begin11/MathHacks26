@@ -41,9 +41,7 @@ top = UI.Frame(0, 0, W, GTOP); top.bg = "dark"
 title = UI.Text("", 16, 11, 26); title.color = "white"
 readout = UI.Text("", 520, 16, 20); readout.color = "#ffd25a"
 fuel_readout = UI.Text("", 380, 16, 20); fuel_readout.color = "#8af08a"
-projects_btn = UI.Button("Projects", 580, 8, 120, 34)
-fullscreen_btn = UI.Button("Fullscreen", 710, 8, 120, 34)
-menu_btn = UI.Button("Menu", 840, 8, 110, 34)
+menu_btn = UI.Button("Modes", 840, 8, 110, 34)
 bottom = UI.Frame(0, GBOT, W, H - GBOT); bottom.bg = "panel"
 msg = UI.Text("", 16, 468, 18)
 drive_btn = UI.Button("Drive!", 556, 494, 120, 38)
@@ -60,33 +58,48 @@ for number in range(1):
     range_ = UI.Input("{yeR}", 0, 0, 150, 30); range_.text = "{yeR}"
     end_rows.append((label, formula, domain, range_))
 Theme.Set("modern")
-for _b, _c in ((projects_btn, "#495057"), (fullscreen_btn, "#495057"), (menu_btn, "#495057"),
+for _b, _c in ((menu_btn, "#495057"),
                (drive_btn, "#2f9e44"), (reset_btn, "#868e96"), (next_btn, "#1971c2"),
                (restart_btn, "#2f9e44"), (result_menu_btn, "#495057")):
     _b.bg, _b.color = _c, "white"
 
 
-# ---------- Menu page ----------
+# ---------- Mode selector ----------
 Page.Open("Menu")
 UI.Text("Road Trip", 300, 50, 72).color = "#ffd25a"
-UI.Text("Function Junction", 330, 130, 36).color = "white"
-UI.Text("Drive the car to the flag by writing the road as a function, y = f(x).", 190, 190, 20).color = "#cfd8e3"
+UI.Text("Choose a game mode", 330, 145, 30).color = "white"
+fj_mode_btn = UI.Button("Function Junction", 250, 220, 460, 64)
+fj_mode_btn.bg, fj_mode_btn.color = "#1971c2", "white"
+fj_mode_btn.on_click = lambda: Page.Open("FunctionJunctionMenu")
+bd_mode_btn = UI.Button("Bomb Defusal", 250, 310, 460, 64)
+bd_mode_btn.bg, bd_mode_btn.color = "#c92a2a", "white"
+bd_mode_btn.on_click = lambda: Page.Open("GameBD")
+
+
+# ---------- Function Junction level selector ----------
+Page.Open("FunctionJunctionMenu")
+UI.Text("Function Junction", 300, 40, 48).color = "#ffd25a"
+UI.Text("Choose a level or try Endless mode.", 260, 105, 20).color = "#cfd8e3"
 for i, lv in enumerate(LEVELS):
-    b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 250 + i * 62, 460, 50)
+    b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 165 + i * 48, 460, 42)
     b.bg, b.color = "#1971c2", "white"
     b.on_click = (lambda n: lambda: start_level(n))(i)
-endless_b = UI.Button("Endless", 350, 900, 250, 50); endless_b.bg, endless_b.color = "#194323", "white"
-back_b = UI.Button("Back to Strife Menu", 20, 20, 250, 50); back_b.on_click = Projects.Home
+endless_b = UI.Button("Endless", 350, 165 + len(LEVELS) * 48, 250, 42)
+endless_b.bg, endless_b.color = "#194323", "white"
+back_b = UI.Button("Back to modes", 20, 482, 170, 42)
+back_b.bg, back_b.color = "#495057", "white"
+back_b.on_click = lambda: Page.Open("Menu")
+Page.Open("Menu")
 
 
 def all_game_widgets():
-    return [top, bottom, title, readout, fuel_readout, projects_btn, fullscreen_btn, menu_btn, msg,
+    return [top, bottom, title, readout, fuel_readout, menu_btn, msg,
             drive_btn, reset_btn, next_btn, endless_hint, restart_btn, result_menu_btn] + [w for r in end_rows for w in r]
 
 
 def layout_window():
-    global W, H, GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
-    W, H = Window.width(), Window.height()
+    global GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
+    # This Strife build uses a fixed 960x540 window and exposes no Window API.
     GTOP = max(50, round(H * .09))
     if S["endless"]:
         panel_height = 150 if E["game_over"] else 58 + E["row_count"] * 34
@@ -97,10 +110,10 @@ def layout_window():
         OX, OY, SCALE, CAMERA_READY = max(60, round(W * .065)), GBOT - 40, 60, True
     top.w = bottom.w = W; bottom.y, bottom.h = GBOT, H - GBOT
     readout.x, fuel_readout.x = max(250, W - 430), max(170, W - 570)
-    projects_btn.x, fullscreen_btn.x, menu_btn.x = W - 390, W - 260, W - 130
+    menu_btn.x = W - 130
     in_game, normal = Page.Current() == "Game", not S["endless"]
     for w in all_game_widgets(): w.visible = False
-    for w in (top, bottom, title, readout, fuel_readout, projects_btn, fullscreen_btn, menu_btn, msg): w.visible = in_game
+    for w in (top, bottom, title, readout, fuel_readout, menu_btn, msg): w.visible = in_game
     if in_game:
         msg.y = GBOT + 8
         if S["endless"] and E["game_over"]:
@@ -126,15 +139,16 @@ def layout_window():
 
 def update_camera():
     global OX, OY, SCALE
-    mx, my = Input.mouse_x(), Input.mouse_y(); on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
-    if Input.mouse_pressed() and on_graph: S["pan"] = (mx, my, OX, OY)
+    mx, my = Input.mouse_x(), Input.mouse_y()
+    down = Input.mouse_down()
+    just_pressed = down and not S.get("mouse_down", False)
+    S["mouse_down"] = down
+    on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
+    if just_pressed and on_graph: S["pan"] = (mx, my, OX, OY)
     if S["pan"]:
-        if Input.mouse_down():
+        if down:
             sx, sy, ox, oy = S["pan"]; OX, OY = ox + mx - sx, oy + my - sy
         else: S["pan"] = None
-    zoom = Input.mouse_wheel() + Input.pinch()
-    if on_graph and zoom:
-        x, y = to_x(mx), (OY - my) / SCALE; SCALE = max(24, min(220, SCALE * 1.15 ** zoom)); OX, OY = mx - x * SCALE, my + y * SCALE
 
 
 # ---------- Endless constraints and routes ----------
@@ -390,7 +404,7 @@ def reset_current():
 drive_btn.on_click = drive; reset_btn.on_click = reset_current
 for _, formula_input, _, _ in end_rows: formula_input.on_submit = lambda text: drive()
 next_btn.on_click = lambda: start_level(min(S["level"] + 1, len(LEVELS) - 1))
-menu_btn.on_click = lambda: Page.Open("Menu"); fullscreen_btn.on_click = Window.toggle_fullscreen; projects_btn.on_click = Projects.Home
+menu_btn.on_click = lambda: Page.Open("Menu")
 endless_b.on_click = start_endless
 restart_btn.on_click = start_endless; result_menu_btn.on_click = lambda: Page.Open("Menu")
 layout_window()

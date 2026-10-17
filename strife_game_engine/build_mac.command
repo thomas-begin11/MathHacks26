@@ -5,11 +5,12 @@ cd "$(dirname "$0")"
 
 python3 -m pip install --quiet pyinstaller pillow raylib lupa || exit 1
 python3 make_icon.py || exit 1
+clang -dynamiclib -fblocks -framework Cocoa pinch_touchpad.m -o libstrife_touchpad.dylib || exit 1
 
 rm -rf build dist
 python3 -m PyInstaller --noconfirm --windowed --name Strife --icon icon.icns \
   --collect-all raylib --collect-all pyray --collect-all lupa --hidden-import _cffi_backend \
-  --add-data "GUIDE.md:." strife.py || exit 1
+  --add-data "GUIDE.md:." --add-binary "libstrife_touchpad.dylib:." strife.py || exit 1
 
 # a drag-to-Applications disk image
 rm -rf dmg && mkdir dmg

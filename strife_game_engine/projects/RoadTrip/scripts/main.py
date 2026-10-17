@@ -13,7 +13,7 @@ W, H = 960, 540
 GTOP, GBOT = 50, 460
 SCALE, OX, OY = 60, 60, 420
 CAMERA_READY = False
-SPEED, TOL, START_TOL, EPS = 4.0, 0.35, 0.3, 0.02
+SPEED, TOL, START_TOL, CONNECT_TOL, EPS = 4.0, 0.35, 0.3, 0.05, 0.02
 Y_MIN, Y_MAX = -1.5, 7.0
 
 
@@ -208,7 +208,10 @@ def build_endless_route():
         if domain["hi"] is None and i != E["row_count"] - 1: raise ValueError("An unbounded domain must be the last function")
         f = parse(formula.text); sy = safe_eval(f, x); requested_end = goal_x if domain["hi"] is None else domain["hi"]
         if requested_end <= x + EPS: raise ValueError("Function %d must extend to the right of x=%g" % (i + 1, x))
-        if sy is None or not inside(sy, range_) or abs(sy - y) > EPS: raise ValueError("Function %d must connect to the previous road" % (i + 1))
+        if sy is None or not inside(sy, range_) or abs(sy - y) > CONNECT_TOL:
+            shown = "undefined" if sy is None else "%g" % sy
+            raise ValueError("Function %d must connect at x=%g: road y=%s, car y=%g" %
+                             (i + 1, x, shown, y))
         end = range_limited_end(f, x, requested_end, range_); ey = safe_eval(f, end)
         if end <= x + EPS: raise ValueError("Function %d's range ends at its starting point" % (i + 1))
         segments.append(dict(f=f, domain=domain, range=range_, start=x, end=end)); total += row_cost(domain); x, y = end, ey

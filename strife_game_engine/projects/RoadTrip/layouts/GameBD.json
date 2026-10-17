@@ -1,0 +1,15 @@
+{
+  "widgets": [
+    {"kind": "frame", "id": "BombBox", "x": 40, "y": 70, "w": 820, "h": 370, "bg": "#202936", "z": -4, "rounding": 0},
+    {"kind": "frame", "id": "Launcher", "x": 84, "y": 243, "w": 32, "h": 32, "bg": "#ffa94d", "z": 1, "rounding": 0.2},
+    {"kind": "text", "id": "BombInstructions", "text": "Hit all four colored targets before time runs out. Obstacles cost 5 seconds.", "x": 40, "y": 515, "size": 16, "color": "#cfd8e3", "z": 1},
+    {"kind": "frame", "id": "GlowRed", "x": 774, "y": 116, "w": 24, "h": 44, "bg": "#ff6b6b", "alpha": 0.45, "z": 0},
+    {"kind": "frame", "id": "TargetRed", "x": 778, "y": 118, "w": 16, "h": 40, "bg": "#ff6b6b", "z": 1},
+    {"kind": "frame", "id": "GlowYellow", "x": 774, "y": 194, "w": 24, "h": 44, "bg": "#ffe066", "alpha": 0.45, "z": 0},
+    {"kind": "frame", "id": "TargetYellow", "x": 778, "y": 196, "w": 16, "h": 40, "bg": "#ffe066", "z": 1},
+    {"kind": "frame", "id": "GlowBlue", "x": 774, "y": 273, "w": 24, "h": 46, "bg": "#74c0fc", "alpha": 0.45, "z": 0},
+    {"kind": "frame", "id": "TargetBlue", "x": 778, "y": 276, "w": 16, "h": 40, "bg": "#74c0fc", "z": 1},
+    {"kind": "frame", "id": "GlowGreen", "x": 774, "y": 353, "w": 24, "h": 44, "bg": "#69db7c", "alpha": 0.45, "z": 0},
+    {"kind": "frame", "id": "TargetGreen", "x": 778, "y": 355, "w": 16, "h": 40, "bg": "#69db7c", "z": 1}
+  ]
+}

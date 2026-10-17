@@ -13,7 +13,8 @@ W, H = 960, 540
 GTOP, GBOT = 50, 460
 SCALE, OX, OY = 60, 60, 420
 CAMERA_READY = False
-SPEED, TOL, START_TOL, CONNECT_TOL, EPS = 4.0, 0.35, 0.3, 0.05, 0.02
+SPEED, EPS = 4.0, 0.02
+MARKER_RADIUS = .25
 Y_MIN, Y_MAX = -1.5, 7.0
 
 
@@ -22,7 +23,8 @@ def to_x(px): return (px - OX) / SCALE
 
 
 S = dict(level=0, f=None, text="", err="", mode="edit", cx=0.0, cy=0.0,
-         crash=None, ys=[], road_ys=[], msg="", kind="info", pan=None, endless=False)
+         crash=None, ys=[], road_ys=[], msg="", kind="info", pan=None, endless=False,
+         row_count=1, active=[], history=[], start=(0, 0), drive_end=0, missed_checkpoint=False)
 E = dict(fuel=100, checkpoints=0, goal=(8, 2), start=(0, 0), active=[], history=[],
          row_count=1, game_over=False, drive_end=0, missed_checkpoint=False, drive_rewards=0)
 
@@ -39,13 +41,9 @@ top = UI.Frame(0, 0, W, GTOP); top.bg = "dark"
 title = UI.Text("", 16, 11, 26); title.color = "white"
 readout = UI.Text("", 520, 16, 20); readout.color = "#ffd25a"
 fuel_readout = UI.Text("", 380, 16, 20); fuel_readout.color = "#8af08a"
-projects_btn = UI.Button("Projects", 580, 8, 120, 34)
-fullscreen_btn = UI.Button("Fullscreen", 710, 8, 120, 34)
-menu_btn = UI.Button("Menu", 840, 8, 110, 34)
+menu_btn = UI.Button("Modes", 840, 8, 110, 34)
 bottom = UI.Frame(0, GBOT, W, H - GBOT); bottom.bg = "panel"
 msg = UI.Text("", 16, 468, 18)
-ylab = UI.Text("y =", 16, 499, 26); ylab.color = "white"
-inp = UI.Input("type a function, e.g. 0.3x + 1", 62, 494, 480, 38)
 drive_btn = UI.Button("Drive!", 556, 494, 120, 38)
 reset_btn = UI.Button("Reset", 686, 494, 100, 38)
 next_btn = UI.Button("Next level", 796, 494, 148, 38)
@@ -60,84 +58,97 @@ for number in range(1):
     range_ = UI.Input("{yeR}", 0, 0, 150, 30); range_.text = "{yeR}"
     end_rows.append((label, formula, domain, range_))
 Theme.Set("modern")
-for _b, _c in ((projects_btn, "#495057"), (fullscreen_btn, "#495057"), (menu_btn, "#495057"),
+for _b, _c in ((menu_btn, "#495057"),
                (drive_btn, "#2f9e44"), (reset_btn, "#868e96"), (next_btn, "#1971c2"),
                (restart_btn, "#2f9e44"), (result_menu_btn, "#495057")):
     _b.bg, _b.color = _c, "white"
 
 
-# ---------- Menu page ----------
+# ---------- Mode selector ----------
 Page.Open("Menu")
 UI.Text("Road Trip", 300, 50, 72).color = "#ffd25a"
-UI.Text("Function Junction", 330, 130, 36).color = "white"
-UI.Text("Drive the car to the flag by writing the road as a function, y = f(x).", 190, 190, 20).color = "#cfd8e3"
+UI.Text("Choose a game mode", 330, 145, 30).color = "white"
+fj_mode_btn = UI.Button("Function Junction", 250, 220, 460, 64)
+fj_mode_btn.bg, fj_mode_btn.color = "#1971c2", "white"
+fj_mode_btn.on_click = lambda: Page.Open("FunctionJunctionMenu")
+bd_mode_btn = UI.Button("Bomb Defusal", 250, 310, 460, 64)
+bd_mode_btn.bg, bd_mode_btn.color = "#c92a2a", "white"
+bd_mode_btn.on_click = lambda: Page.Open("GameBD")
+
+
+# ---------- Function Junction level selector ----------
+Page.Open("FunctionJunctionMenu")
+UI.Text("Function Junction", 300, 40, 48).color = "#ffd25a"
+UI.Text("Choose a level or try Endless mode.", 260, 105, 20).color = "#cfd8e3"
 for i, lv in enumerate(LEVELS):
-    b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 250 + i * 62, 460, 50)
+    b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 165 + i * 48, 460, 42)
     b.bg, b.color = "#1971c2", "white"
     b.on_click = (lambda n: lambda: start_level(n))(i)
-endless_b = UI.Button("Endless", 350, 900, 250, 50); endless_b.bg, endless_b.color = "#1971c2", "white"
-back_b = UI.Button("Back to Strife Menu", 20, 20, 250, 50); back_b.on_click = Projects.Home
+endless_b = UI.Button("Endless", 350, 165 + len(LEVELS) * 48, 250, 42)
+endless_b.bg, endless_b.color = "#194323", "white"
+back_b = UI.Button("Back to modes", 20, 482, 170, 42)
+back_b.bg, back_b.color = "#495057", "white"
+back_b.on_click = lambda: Page.Open("Menu")
+Page.Open("Menu")
 
 
 def all_game_widgets():
-    return [top, bottom, title, readout, fuel_readout, projects_btn, fullscreen_btn, menu_btn, msg, ylab,
-            inp, drive_btn, reset_btn, next_btn, endless_hint, restart_btn, result_menu_btn] + [w for r in end_rows for w in r]
+    return [top, bottom, title, readout, fuel_readout, menu_btn, msg,
+            drive_btn, reset_btn, next_btn, endless_hint, restart_btn, result_menu_btn] + [w for r in end_rows for w in r]
 
 
 def layout_window():
-    global W, H, GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
-    W, H = Window.width(), Window.height()
+    global GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
+    # This Strife build uses a fixed 960x540 window and exposes no Window API.
     GTOP = max(50, round(H * .09))
     if S["endless"]:
         panel_height = 150 if E["game_over"] else 58 + E["row_count"] * 34
     else:
-        panel_height = max(80, round(H * .15))
+        panel_height = 58 + S["row_count"] * 34
     GBOT = H - panel_height
     if not CAMERA_READY:
         OX, OY, SCALE, CAMERA_READY = max(60, round(W * .065)), GBOT - 40, 60, True
     top.w = bottom.w = W; bottom.y, bottom.h = GBOT, H - GBOT
     readout.x, fuel_readout.x = max(250, W - 430), max(170, W - 570)
-    projects_btn.x, fullscreen_btn.x, menu_btn.x = W - 390, W - 260, W - 130
+    menu_btn.x = W - 130
     in_game, normal = Page.Current() == "Game", not S["endless"]
     for w in all_game_widgets(): w.visible = False
-    for w in (top, bottom, title, readout, fuel_readout, projects_btn, fullscreen_btn, menu_btn, msg): w.visible = in_game
-    if normal and in_game:
-        msg.y, ylab.y = GBOT + 8, H - 43
-        inp.y = drive_btn.y = reset_btn.y = next_btn.y = H - 46
-        inp.w, drive_btn.x, reset_btn.x, next_btn.x = max(140, W - 490), W - 390, W - 260, W - 150
-        ylab.visible = inp.visible = drive_btn.visible = reset_btn.visible = True
-        next_btn.visible = S["mode"] == "won" and S["level"] < len(LEVELS) - 1
-    elif in_game:
+    for w in (top, bottom, title, readout, fuel_readout, menu_btn, msg): w.visible = in_game
+    if in_game:
         msg.y = GBOT + 8
-        if E["game_over"]:
+        if S["endless"] and E["game_over"]:
             restart_btn.x, restart_btn.y = W / 2 - 160, GBOT + 90
             result_menu_btn.x, result_menu_btn.y = W / 2 + 20, GBOT + 90
             restart_btn.visible = result_menu_btn.visible = True
         else:
-            endless_hint.x, endless_hint.y, endless_hint.visible = 16, GBOT + 28, True
+            row_count = E["row_count"] if S["endless"] else S["row_count"]
+            if S["endless"]: endless_hint.x, endless_hint.y, endless_hint.visible = 16, GBOT + 28, True
             row_y = GBOT + 50
             for i, (label, formula, domain, range_) in enumerate(end_rows):
-                show = i < E["row_count"]
+                show = i < row_count
                 label.text, label.x, label.y = "f%d(x) =" % (i + 1), 16, row_y + i * 34 + 5
                 formula.x, formula.y, formula.w, formula.h = 78, row_y + i * 34, max(160, W - 550), 30
                 domain.x, domain.y, domain.w, domain.h = W - 460, row_y + i * 34, 210, 30
                 range_.x, range_.y, range_.w, range_.h = W - 240, row_y + i * 34, 210, 30
                 for w in (label, formula, domain, range_): w.visible = show
             drive_btn.x, drive_btn.y, reset_btn.x, reset_btn.y = W - 160, GBOT + 7, W - 290, GBOT + 7
-            drive_btn.visible = reset_btn.visible = S["mode"] != "driving"
+            drive_btn.visible = reset_btn.visible = S["mode"] not in ("driving", "won")
+            next_btn.x, next_btn.y = W - 450, GBOT + 7
+            next_btn.visible = normal and S["mode"] == "won" and S["level"] < len(LEVELS) - 1
 
 
 def update_camera():
     global OX, OY, SCALE
-    mx, my = Input.mouse_x(), Input.mouse_y(); on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
-    if Input.mouse_pressed() and on_graph: S["pan"] = (mx, my, OX, OY)
+    mx, my = Input.mouse_x(), Input.mouse_y()
+    down = Input.mouse_down()
+    just_pressed = down and not S.get("mouse_down", False)
+    S["mouse_down"] = down
+    on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
+    if just_pressed and on_graph: S["pan"] = (mx, my, OX, OY)
     if S["pan"]:
-        if Input.mouse_down():
+        if down:
             sx, sy, ox, oy = S["pan"]; OX, OY = ox + mx - sx, oy + my - sy
         else: S["pan"] = None
-    zoom = Input.mouse_wheel() + Input.pinch()
-    if on_graph and zoom:
-        x, y = to_x(mx), (OY - my) / SCALE; SCALE = max(24, min(220, SCALE * 1.15 ** zoom)); OX, OY = mx - x * SCALE, my + y * SCALE
 
 
 # ---------- Endless constraints and routes ----------
@@ -199,23 +210,47 @@ def range_limited_end(f, start, end, range_):
     return end
 
 
-def build_endless_route():
-    goal_x = E["goal"][0]; x, y, segments, total = E["start"][0], E["start"][1], [], 0
-    for i, (_, formula, domain_text, range_text) in enumerate(end_rows[:E["row_count"]]):
+def marker_connection(f, domain, range_, car_x, car_y, requested_end):
+    """Find the first forward point where a road touches the half-grid car marker."""
+    start = max(car_x, domain["lo"] if domain["lo"] is not None else car_x)
+    stop = min(car_x + MARKER_RADIUS, requested_end)
+    if start > stop + EPS: return None
+    steps = max(1, int(math.ceil((stop - start) / .005)))
+    for number in range(steps + 1):
+        x = start + (stop - start) * number / steps
+        y = safe_eval(f, x)
+        if y is not None and inside(x, domain) and inside(y, range_) and abs(y - car_y) <= MARKER_RADIUS + EPS:
+            return x, y
+    return None
+
+
+def touches_marker(x, y, point):
+    return abs(x - point[0]) <= MARKER_RADIUS + EPS and abs(y - point[1]) <= MARKER_RADIUS + EPS
+
+
+def build_route(start, goal_x, row_count):
+    x, y, segments, total = start[0], start[1], [], 0
+    for i, (_, formula, domain_text, range_text) in enumerate(end_rows[:row_count]):
         if not formula.text.strip(): raise ValueError("Function %d needs a formula" % (i + 1))
         domain, range_ = parse_constraint(domain_text.text, "x"), parse_constraint(range_text.text, "y")
-        if domain["lo"] is not None and abs(domain["lo"] - x) > EPS: raise ValueError("Function %d must start at x=%g" % (i + 1, x))
-        if domain["hi"] is None and i != E["row_count"] - 1: raise ValueError("An unbounded domain must be the last function")
-        f = parse(formula.text); sy = safe_eval(f, x); requested_end = goal_x if domain["hi"] is None else domain["hi"]
-        if requested_end <= x + EPS: raise ValueError("Function %d must extend to the right of x=%g" % (i + 1, x))
-        if sy is None or not inside(sy, range_) or abs(sy - y) > CONNECT_TOL:
-            shown = "undefined" if sy is None else "%g" % sy
-            raise ValueError("Function %d must connect at x=%g: road y=%s, car y=%g" %
-                             (i + 1, x, shown, y))
-        end = range_limited_end(f, x, requested_end, range_); ey = safe_eval(f, end)
-        if end <= x + EPS: raise ValueError("Function %d's range ends at its starting point" % (i + 1))
-        segments.append(dict(f=f, domain=domain, range=range_, start=x, end=end)); total += row_cost(domain); x, y = end, ey
+        if domain["hi"] is None and i != row_count - 1: raise ValueError("An unbounded domain must be the last function")
+        f = parse(formula.text); requested_end = goal_x if domain["hi"] is None else domain["hi"]
+        connection = marker_connection(f, domain, range_, x, y, requested_end)
+        if connection is None: raise ValueError("Function %d must touch the car marker" % (i + 1))
+        segment_start, _ = connection
+        if requested_end <= segment_start + EPS: raise ValueError("Function %d must extend to the right of the car" % (i + 1))
+        end = range_limited_end(f, segment_start, requested_end, range_); ey = safe_eval(f, end)
+        if end <= segment_start + EPS: raise ValueError("Function %d's range ends at the car" % (i + 1))
+        segments.append(dict(f=f, domain=domain, range=range_, start=segment_start, end=end)); total += row_cost(domain); x, y = end, ey
     return segments, total, (x, y)
+
+
+def build_endless_route(): return build_route(E["start"], E["goal"][0], E["row_count"])
+
+
+def build_normal_route():
+    level = LEVELS[S["level"]]
+    return build_route(S["start"], level["goal"][0], 1)
 
 
 def endless_value_at(x, segments=None):
@@ -227,10 +262,10 @@ def endless_value_at(x, segments=None):
     return None
 
 
-def preview_endless_segments():
+def preview_segments(row_count):
     """Parse whatever is currently typed so the graph previews before Drive."""
     segments = []
-    for _, formula, domain_text, range_text in end_rows[:E["row_count"]]:
+    for _, formula, domain_text, range_text in end_rows[:row_count]:
         if not formula.text.strip():
             continue
         try:
@@ -244,18 +279,23 @@ def preview_endless_segments():
 
 def refresh_curve():
     if S["endless"]:
-        current = S["active"] if S["mode"] == "driving" else preview_endless_segments()
+        current = S["active"] if S["mode"] == "driving" else preview_segments(E["row_count"])
         segments = E["history"] + current
-        S["road_ys"] = [[None if (v := endless_value_at(to_x(px), [segment])) is None else OY - v * SCALE
-                         for px in range(max(0, W))] for segment in segments]
-        S["ys"] = []
-    elif S["f"] is not None:
-        S["road_ys"] = []
-        S["ys"] = [None if (v := safe_eval(S["f"], to_x(px))) is None else OY - v * SCALE for px in range(max(0, W))]
+    else:
+        current = S["active"] if S["mode"] in ("driving", "won") else preview_segments(1)
+        segments = S["history"] + current
+    S["road_ys"] = [[None if (v := endless_value_at(to_x(px), [segment])) is None else OY - v * SCALE
+                     for px in range(max(0, W))] for segment in segments]
+    S["ys"] = []
 
 
 def clear_endless_rows():
     E["row_count"] = 1
+    for _, formula, domain, range_ in end_rows: formula.text, domain.text, range_.text = "", "{xeR}", "{yeR}"
+
+
+def clear_normal_rows():
+    S["row_count"] = 1
     for _, formula, domain, range_ in end_rows: formula.text, domain.text, range_.text = "", "{xeR}", "{yeR}"
 
 
@@ -277,22 +317,16 @@ def start_endless():
 
 # ---------- Normal levels ----------
 def start_level(i):
-    S.update(endless=False, level=i, f=None, text="", err="", ys=[], road_ys=[], mode="edit", crash=None)
-    S["cx"], S["cy"] = LEVELS[i]["start"]; inp.text, title.text, readout.text, fuel_readout.text = "", LEVELS[i]["name"], "", ""
+    level_start = LEVELS[i]["start"]
+    S.update(endless=False, level=i, f=None, text="", err="", ys=[], road_ys=[], mode="edit", crash=None,
+             active=[], history=[], start=level_start, drive_end=level_start[0], missed_checkpoint=False)
+    S["cx"], S["cy"] = level_start
+    clear_normal_rows(); title.text, readout.text, fuel_readout.text = LEVELS[i]["name"], "", ""
     set_msg(LEVELS[i]["hint"]); Page.Open("Game")
 
 
-def rebuild_curve():
-    S["mode"], S["crash"], S["f"], S["err"], S["ys"] = "edit", None, None, "", []
-    S["cx"], S["cy"] = LEVELS[S["level"]]["start"]
-    if not inp.text.strip(): set_msg(LEVELS[S["level"]]["hint"]); return
-    try: S["f"] = parse(inp.text)
-    except ValueError as e: S["err"] = str(e); set_msg(S["err"], "bad"); return
-    refresh_curve(); set_msg("Looks good? Press Enter or Drive!")
-
-
 def hits_wall(x, y):
-    return any(x1 - .12 < x < x2 + .12 and y1 - .12 < y < y2 + .12 for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"])
+    return any(x1 - .25 < x < x2 + .25 and y1 - .25 < y < y2 + .25 for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"])
 
 
 def drive_endless():
@@ -304,15 +338,18 @@ def drive_endless():
     E["fuel"] -= cost; fuel_readout.text = "Fuel: %.0f" % E["fuel"]
     E["active"], E["drive_end"], E["missed_checkpoint"], E["drive_rewards"] = segments, endpoint[0], False, 0
     S["active"], S["mode"], S["crash"] = segments, "driving", None
+    S["cx"] = segments[0]["start"]; S["cy"] = endless_value_at(S["cx"], segments)
     set_msg("Driving to x=%g... %.0f fuel spent." % (endpoint[0], cost))
 
 
 def drive():
     if S["endless"]: drive_endless(); return
-    if S["f"] is None: set_msg(S["err"] or "Type a function first.", "bad"); return
-    sx, sy = LEVELS[S["level"]]["start"]; y0 = safe_eval(S["f"], sx)
-    if y0 is None or abs(y0 - sy) > START_TOL: set_msg("Your road must start at the car.", "bad"); return
-    S["mode"], S["cx"], S["cy"], S["crash"] = "driving", sx, sy, None; set_msg("Driving...")
+    try: segments, _, endpoint = build_normal_route()
+    except ValueError as e: set_msg(str(e), "bad"); return
+    S["active"], S["mode"], S["crash"] = segments, "driving", None
+    S["drive_end"], S["missed_checkpoint"] = endpoint[0], False
+    S["cx"] = segments[0]["start"]; S["cy"] = endless_value_at(S["cx"], segments)
+    set_msg("Driving to x=%g..." % endpoint[0])
 
 
 def crash(x, y, why): S["mode"], S["crash"] = "crashed", (x, y); set_msg(why + " Edit your function and try again.", "bad")
@@ -320,6 +357,18 @@ def normal_win():
     S["mode"] = "won"; set_msg("Checkpoint reached!", "good")
     done = Storage.Load("levels_done", [])
     if S["level"] not in done: Storage.Save("levels_done", done + [S["level"]])
+
+
+def finish_normal_route():
+    S["history"].extend(S["active"]); S["active"] = []
+    S["start"] = (S["cx"], S["cy"])
+    clear_normal_rows()
+    if S["missed_checkpoint"]:
+        S["mode"], S["crash"] = "crashed", (S["cx"], S["cy"])
+        set_msg("The checkpoint is behind the car. Reset the level and try again.", "bad")
+    else:
+        S["mode"], S["crash"] = "edit", None
+        set_msg("Road ended at x=%g, y=%g. Build the next road from here." % (S["cx"], S["cy"]), "good")
 
 
 def reach_endless_checkpoint():
@@ -345,12 +394,17 @@ def finish_endless_route():
 
 def reset_current():
     if S["endless"]: S["active"] = []; E["active"] = []; clear_endless_rows(); set_msg("Route cleared.")
-    else: inp.text = ""; rebuild_curve()
+    else:
+        level_start = LEVELS[S["level"]]["start"]
+        S["active"], S["history"], S["mode"], S["crash"], S["start"] = [], [], "edit", None, level_start
+        S["cx"], S["cy"] = level_start
+        clear_normal_rows(); set_msg(LEVELS[S["level"]]["hint"])
 
 
-drive_btn.on_click = drive; inp.on_submit = lambda text: drive(); reset_btn.on_click = reset_current
+drive_btn.on_click = drive; reset_btn.on_click = reset_current
+for _, formula_input, _, _ in end_rows: formula_input.on_submit = lambda text: drive()
 next_btn.on_click = lambda: start_level(min(S["level"] + 1, len(LEVELS) - 1))
-menu_btn.on_click = lambda: Page.Open("Menu"); fullscreen_btn.on_click = Window.toggle_fullscreen; projects_btn.on_click = Projects.Home
+menu_btn.on_click = lambda: Page.Open("Menu")
 endless_b.on_click = start_endless
 restart_btn.on_click = start_endless; result_menu_btn.on_click = lambda: Page.Open("Menu")
 layout_window()
@@ -360,32 +414,30 @@ def on_update(dt):
     layout_window()
     if Page.Current() != "Game": return
     update_camera(); refresh_curve()
-    if not S["endless"] and inp.text != S["text"]: S["text"] = inp.text; rebuild_curve()
     if S["mode"] != "driving": return
     remaining = SPEED * dt
     while remaining > 0 and S["mode"] == "driving":
         step = min(.02, remaining); remaining -= step
-        x = min(S["cx"] + step, E["drive_end"]) if S["endless"] else S["cx"] + step
-        y = endless_value_at(x) if S["endless"] else safe_eval(S["f"], x)
+        drive_end = E["drive_end"] if S["endless"] else S["drive_end"]
+        x = min(S["cx"] + step, drive_end)
+        y = endless_value_at(x, S["active"])
         if y is None: crash(S["cx"], S["cy"], "The road has a gap at x=%.1f." % x); continue
-        if y < Y_MIN or y > Y_MAX: crash(x, max(Y_MIN, min(Y_MAX, y)), "The car left the map."); continue
+        if S["endless"] and (y < Y_MIN or y > Y_MAX):
+            crash(x, max(Y_MIN, min(Y_MAX, y)), "The car left the map."); continue
         if not S["endless"] and hits_wall(x, y): crash(x, y, "Crashed into an obstacle at x=%.1f." % x); continue
         S["cx"], S["cy"] = x, y
         if S["endless"]:
             goal = E["goal"]
-            if not E["missed_checkpoint"] and x >= goal[0]:
-                checkpoint_y = endless_value_at(goal[0])
-                if checkpoint_y is not None and abs(checkpoint_y - goal[1]) <= TOL:
-                    reach_endless_checkpoint()
-                else:
-                    E["missed_checkpoint"] = True
+            if not E["missed_checkpoint"] and touches_marker(x, y, goal): reach_endless_checkpoint()
+            elif not E["missed_checkpoint"] and x > goal[0] + MARKER_RADIUS: E["missed_checkpoint"] = True
             if x >= E["drive_end"] and S["mode"] == "driving":
                 finish_endless_route()
         else:
             goal = LEVELS[S["level"]]["goal"]
-            if x >= goal[0]:
-                if abs(y - goal[1]) <= TOL: normal_win()
-                else: crash(x, y, "Missed the flag.")
+            if not S["missed_checkpoint"] and touches_marker(x, y, goal):
+                S["history"].extend(S["active"]); S["active"] = []; normal_win()
+            elif not S["missed_checkpoint"] and x > goal[0] + MARKER_RADIUS: S["missed_checkpoint"] = True
+            if x >= S["drive_end"] and S["mode"] == "driving": finish_normal_route()
     readout.text = "x = %.2f   y = %.2f" % (S["cx"], S["cy"])
 
 
@@ -396,9 +448,14 @@ def box(x, y, w, h, c):
 
 
 def draw_car(px, py):
-    box(px - 17, py - 16, 34, 11, "#e8590c"); box(px - 9, py - 24, 20, 9, "#ffa94d")
-    box(px - 6, py - 22, 7, 5, "#d0ebff"); box(px + 2, py - 22, 7, 5, "#d0ebff")
-    box(px - 14, py - 8, 9, 9, "#212529"); box(px + 6, py - 8, 9, 9, "#212529")
+    diameter = SCALE * .5
+    body_h, cabin_w, cabin_h, wheel = diameter * .34, diameter * .56, diameter * .28, diameter * .22
+    box(px - diameter / 2, py - body_h, diameter, body_h, "#e8590c")
+    box(px - cabin_w / 2, py - body_h - cabin_h, cabin_w, cabin_h, "#ffa94d")
+    box(px - cabin_w * .34, py - body_h - cabin_h * .82, cabin_w * .28, cabin_h * .55, "#d0ebff")
+    box(px + cabin_w * .06, py - body_h - cabin_h * .82, cabin_w * .28, cabin_h * .55, "#d0ebff")
+    box(px - diameter * .36, py - wheel * .65, wheel, wheel, "#212529")
+    box(px + diameter * .14, py - wheel * .65, wheel, wheel, "#212529")
 
 
 def on_draw():
@@ -418,13 +475,17 @@ def on_draw():
     else:
         for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"]:
             ax, ay = to_px(x1, y2); bx, by = to_px(x2, y1); box(ax, ay, bx - ax, by - ay, "#c92a2a"); box(ax, ay, bx - ax, 3, "#e03131")
-        start, goal = LEVELS[S["level"]]["start"], LEVELS[S["level"]]["goal"]
-    for road in S["road_ys"] if S["endless"] else [S["ys"]]:
+        start, goal = S["start"], LEVELS[S["level"]]["goal"]
+    for road in S["road_ys"]:
         for px in range(W - 1):
             a = road[px] if px < len(road) else None; b = road[px + 1] if px + 1 < len(road) else None
             if a is not None and b is not None: box(px, int(min(a, b)) - 1, 2, int(abs(a - b)) + 3, "#1971c2")
-    fx, fy = to_px(*goal); box(fx - 1, fy - 42, 3, 42, "#212529"); box(fx + 2, fy - 42, 22, 14, "#2f9e44"); box(fx - 4, fy - 4, 9, 9, "#2f9e44")
-    sx, sy = to_px(*start); box(sx - 4, sy - 4, 9, 9, "#f08c00")
+    marker = SCALE * .5; pole_h, pole_w = marker * 1.5, max(2, marker * .08)
+    fx, fy = to_px(*goal)
+    box(fx - pole_w / 2, fy - pole_h, pole_w, pole_h, "#212529")
+    box(fx + pole_w / 2, fy - pole_h, marker * .75, marker * .35, "#2f9e44")
+    box(fx - marker / 2, fy - marker / 2, marker, marker, "#2f9e44")
+    sx, sy = to_px(*start); box(sx - marker / 2, sy - marker / 2, marker, marker, "#f08c00")
     if S["mode"] == "crashed" and S["crash"]:
         cx, cy = to_px(*S["crash"]); Draw.text("X", cx - 9, cy - 22, 34, "#c92a2a")
     else:

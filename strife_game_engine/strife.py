@@ -3,7 +3,7 @@ Run:  python3 strife.py     (loads scripts/main.lua and/or scripts/main.py)
 Needs: pip install raylib lupa
 Press F1 in the running window for builder mode.
 """
-import os, sys, json, copy, shutil, re, subprocess
+import os, sys, json, copy, shutil, re, subprocess, ctypes
 from types import SimpleNamespace
 import pyray as rl
 from lupa import LuaRuntime
@@ -29,6 +29,23 @@ EDIT_BAR = 70
 HIDPI = True  # sharper on Retina. If mouse clicks land in the wrong place, set this to False.
 PROJECTS = os.path.join(BASE, "projects")
 DEFAULT_ROUND = {"frame": 0.06, "button": 0.35, "input": 0.25}  # corner rounding when the modern theme is on
+
+
+def load_touchpad_pinch():
+    """Load the optional macOS bridge for real trackpad magnify gestures."""
+    if sys.platform != "darwin":
+        return None
+    root = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "libstrife_touchpad.dylib")
+    if not os.path.exists(path):
+        return None
+    try:
+        bridge = ctypes.CDLL(path)
+        bridge.strife_enable_touchpad_pinch()
+        bridge.strife_take_touchpad_pinch.restype = ctypes.c_double
+        return bridge
+    except OSError:
+        return None
 
 def set_root(root, save_dir=None):
     """Point the engine at a project folder (scripts, layouts, assets). save_dir = where save.json goes."""
@@ -154,6 +171,7 @@ class Engine:
         self.hub, self.start = False, None
         self.player, self.project, self.app_font = PLAYER, "", ""
         self.exporting, self.quitting, self.typing_old = None, False, None
+        self.touchpad = None
         self.newproj = SimpleNamespace(name="", lang="lua", on_submit=None)
         self.newproj.on_submit = lambda *_: self.create_project(self.newproj.name, self.newproj.lang)
         if os.path.exists(SAVE_FILE):
@@ -224,12 +242,28 @@ class Engine:
         def key_of(name):
             return getattr(rl, "KEY_" + str(name).upper(), None)
 
+        def pinch():
+            if self.touchpad:
+                return self.touchpad.strife_take_touchpad_pinch() * 8
+            return (1 if rl.get_gesture_detected() == rl.GESTURE_PINCH_IN else
+                    -1 if rl.get_gesture_detected() == rl.GESTURE_PINCH_OUT else 0)
+
         inp = SimpleNamespace(
             key_down=lambda k: bool(key_of(k) and rl.is_key_down(key_of(k))),
             key_pressed=lambda k: bool(key_of(k) and rl.is_key_pressed(key_of(k))),
             mouse_x=lambda: rl.get_mouse_x(),
             mouse_y=lambda: rl.get_mouse_y(),
             mouse_down=lambda: rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT),
+            mouse_pressed=lambda: rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT),
+            mouse_wheel=lambda: rl.get_mouse_wheel_move(),
+            pinch=pinch,
+        )
+
+        window = SimpleNamespace(
+            width=lambda: rl.get_screen_width(),
+            height=lambda: rl.get_screen_height(),
+            fullscreen=lambda: rl.is_window_fullscreen(),
+            toggle_fullscreen=lambda: rl.toggle_fullscreen(),
         )
 
         draw = SimpleNamespace(  # only valid inside on_draw()
@@ -257,7 +291,7 @@ class Engine:
 
         return {"UI": ui, "Page": page, "Tween": tween, "Storage": storage, "Assets": assets,
                 "Input": inp, "Draw": draw, "After": after, "Overlaps": overlaps,
-                "Font": font, "Theme": theme,
+                "Font": font, "Theme": theme, "Window": window,
                 "Quit": lambda: setattr(self, "quitting", True)}
 
     # ---------- assets ----------
@@ -791,6 +825,8 @@ class Engine:
 
     # ---------- per-frame ----------
     def update(self, dt):
+        global WIDTH, HEIGHT
+        WIDTH, HEIGHT = rl.get_screen_width(), rl.get_screen_height()
         self.reload_timer += dt
         self.status_t = max(0.0, self.status_t - dt)
         if self.reload_timer > 0.5:
@@ -912,8 +948,10 @@ class Engine:
             set_root(BUNDLED, user_data_dir(title))
         else:
             self.seed_bundle()
-        rl.set_config_flags(rl.FLAG_MSAA_4X_HINT | (rl.FLAG_WINDOW_HIGHDPI if HIDPI else 0))
+        rl.set_config_flags(rl.FLAG_MSAA_4X_HINT | rl.FLAG_WINDOW_RESIZABLE |
+                            (rl.FLAG_WINDOW_HIGHDPI if HIDPI else 0))
         rl.init_window(WIDTH, HEIGHT, title)
+        self.touchpad = load_touchpad_pinch()
         rl.set_target_fps(60)
         rl.set_exit_key(rl.KEY_NULL)  # Esc is used by builder mode, not for quitting
         if PLAYER:

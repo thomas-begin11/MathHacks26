@@ -3,6 +3,7 @@
 # car follows y = f(x) to the checkpoint without touching any obstacles.
 #
 # Files:  mathparse.py = equation parser   levels.py = level data   main.py = game
+import math
 import sys
 for _m in ("mathparse", "levels"):      # so hot reload picks up edits to those files too
     sys.modules.pop(_m, None)
@@ -14,6 +15,7 @@ W, H = 960, 540
 GTOP, GBOT = 50, 460            # the graph occupies y = 50..460 on screen
 SCALE = 60                      # pixels per graph unit
 OX, OY = 60, 420                # screen position of graph point (0, 0)
+CAMERA_READY = False
 SPEED = 4.0                     # car speed, graph units per second
 TOL = 0.35                      # how close to the flag counts as reaching it
 START_TOL = 0.3                 # how close the road must pass to the car's start
@@ -28,7 +30,7 @@ def to_x(px):
 
 
 # ---------- game state ----------
-S = dict(level=0, f=None, text="", err="", mode="edit", cx=0.0, cy=0.0, crash=None, ys=[], msg="", kind="info")
+S = dict(level=0, f=None, text="", err="", mode="edit", cx=0.0, cy=0.0, crash=None, ys=[], msg="", kind="info", pan=None)
 
 
 def set_msg(text, kind="info"):
@@ -46,6 +48,7 @@ title.color = "white"
 readout = UI.Text("", 520, 16, 20)
 readout.color = "#ffd25a"
 menu_btn = UI.Button("Menu", 840, 8, 110, 34)
+fullscreen_btn = UI.Button("Fullscreen", 710, 8, 120, 34)
 
 bottom = UI.Frame(0, GBOT, W, H - GBOT)
 bottom.bg = "panel"
@@ -73,6 +76,49 @@ for i, lv in enumerate(LEVELS):
     b.bg = "#1971c2"
     b.color = "white"
     b.on_click = (lambda n: lambda: start_level(n))(i)
+
+def layout_window():
+    global W, H, GTOP, GBOT, OY, OX, SCALE, CAMERA_READY
+    W, H = Window.width(), Window.height()
+    GTOP = max(50, round(H * 0.09))
+    GBOT = H - max(80, round(H * 0.15))
+    if not CAMERA_READY:
+        OX, OY = max(60, round(W * 0.065)), GBOT - max(40, round(H * 0.075))
+        SCALE = max(24, min(60, (W - OX - 40) / 14))
+        CAMERA_READY = True
+    top.w = bottom.w = W
+    readout.x = max(250, W - 430)
+    fullscreen_btn.x, menu_btn.x = W - 260, W - 130
+    bottom.y, bottom.h = GBOT, H - GBOT
+    msg.y, ylab.y = GBOT + 8, H - 43
+    inp.y = drive_btn.y = reset_btn.y = next_btn.y = H - 46
+    inp.w = max(140, W - 490)
+    drive_btn.x, reset_btn.x, next_btn.x = W - 390, W - 260, W - 150
+    if S["f"] is not None:
+        S["ys"] = [None if (v := safe_eval(S["f"], to_x(px))) is None else OY - v * SCALE for px in range(W)]
+    in_game = Page.Current() == "Game"
+    for widget in (top, bottom, title, readout, menu_btn, fullscreen_btn, msg, ylab, inp, drive_btn, reset_btn, next_btn):
+        widget.visible = in_game
+
+
+def update_camera():
+    """Pan the graph by dragging and zoom around the pointer."""
+    global OX, OY, SCALE
+    mx, my = Input.mouse_x(), Input.mouse_y()
+    on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
+    if Input.mouse_pressed() and on_graph:
+        S["pan"] = (mx, my, OX, OY)
+    if S["pan"]:
+        if Input.mouse_down():
+            sx, sy, start_x, start_y = S["pan"]
+            OX, OY = start_x + mx - sx, start_y + my - sy
+        else:
+            S["pan"] = None
+    zoom = Input.mouse_wheel() + Input.pinch()
+    if on_graph and zoom:
+        world_x, world_y = to_x(mx), (OY - my) / SCALE
+        SCALE = max(24, min(220, SCALE * (1.15 ** zoom)))
+        OX, OY = mx - world_x * SCALE, my + world_y * SCALE
 
 
 # ---------- game logic ----------
@@ -155,11 +201,17 @@ inp.on_submit = lambda text: drive()
 reset_btn.on_click = lambda: (setattr(inp, "text", ""), rebuild_curve())
 next_btn.on_click = lambda: start_level(min(S["level"] + 1, len(LEVELS) - 1))
 menu_btn.on_click = lambda: Page.Open("Menu")
+fullscreen_btn.on_click = Window.toggle_fullscreen
+layout_window()
 
 
 def on_update(dt):
+    layout_window()
     if Page.Current() != "Game":
         return
+    update_camera()
+    if S["f"] is not None:
+        S["ys"] = [None if (v := safe_eval(S["f"], to_x(px))) is None else OY - v * SCALE for px in range(W)]
     if inp.text != S["text"]:               # live preview while typing, like Desmos
         S["text"] = inp.text
         rebuild_curve()
@@ -211,20 +263,30 @@ def on_draw():
         return
     lv = LEVELS[S["level"]]
     box(0, GTOP, W, GBOT - GTOP, "#fbfcfe")
-    for gx in range(-1, 16):                               # grid
+    min_x, max_x = math.floor(to_x(0)) - 1, math.ceil(to_x(W)) + 1
+    min_y = math.floor((OY - GBOT) / SCALE) - 1
+    max_y = math.ceil((OY - GTOP) / SCALE) + 1
+    for gx in range(min_x, max_x + 1):                      # infinite grid, clipped to the viewport
         px, _ = to_px(gx, 0)
         box(px, GTOP, 1, GBOT - GTOP, "#dde3ea")
-    for gy in range(-1, 7):
+    for gy in range(min_y, max_y + 1):
         _, py = to_px(0, gy)
         box(0, py, W, 1, "#dde3ea")
     box(OX - 1, GTOP, 2, GBOT - GTOP, "#495057")           # axes
     box(0, OY - 1, W, 2, "#495057")
-    for gx in range(2, 16, 2):
+    label_y = min(max(OY + 5, GTOP + 3), GBOT - 18)
+    label_x = min(max(OX - 22, 3), W - 25)
+    label_every = 1 if SCALE >= 38 else 2
+    for gx in range(min_x, max_x + 1):
+        if gx == 0 or gx % label_every:
+            continue
         px, py = to_px(gx, 0)
-        Draw.text(str(gx), px - 4, min(py + 5, GBOT - 18), 14, "#6c757d")
-    for gy in range(1, 7):
+        Draw.text(str(gx), px - 4, label_y, 14, "#6c757d")
+    for gy in range(min_y, max_y + 1):
+        if gy == 0 or gy % label_every:
+            continue
         px, py = to_px(0, gy)
-        Draw.text(str(gy), px - 16, py - 8, 14, "#6c757d")
+        Draw.text(str(gy), label_x, py - 8, 14, "#6c757d")
 
     for (x1, y1, x2, y2) in lv["walls"]:                   # obstacles
         ax, ay = to_px(x1, y2)

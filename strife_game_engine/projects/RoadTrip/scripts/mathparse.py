@@ -3,7 +3,7 @@
     f = parse("y = 2x^2 - 3sin(x) + 1")
     f(1.5)  ->  a number
 
-Supports: + - * / ^  parentheses, implicit multiplication (2x, 3(x+1), x(x-4)),
+Supports: + - * / ^ ** parentheses, implicit multiplication (2x, 3(x+1), x(x-4)),
 x, pi, e, and the functions sin cos tan sqrt abs ln log exp floor ceil.
 Raises ValueError with a friendly message when the text can't be understood.
 """
@@ -19,7 +19,10 @@ NAMES = sorted(list(FUNCS) + list(CONSTS) + ["x"], key=len, reverse=True)  # lon
 
 
 def _tokenize(s):
-    s = s.lower().replace(" ", "").replace("²", "^2").replace("×", "*").replace("−", "-")
+    s = s.lower().replace(" ", "").replace("**", "^").replace("×", "*").replace("−", "-")
+    for superscript, power in (("²", "2"), ("³", "3"), ("⁴", "4"), ("⁵", "5"),
+                               ("⁶", "6"), ("⁷", "7"), ("⁸", "8"), ("⁹", "9")):
+        s = s.replace(superscript, "^" + power)
     for prefix in ("y=", "f(x)="):
         if s.startswith(prefix):
             s = s[len(prefix):]

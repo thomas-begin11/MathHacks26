@@ -10,6 +10,7 @@ for _m in ("mathparse", "levels"):      # so hot reload picks up edits to those 
 from mathparse import parse, safe_eval
 from levels import LEVELS
 
+
 # ---------- graph geometry (pixels <-> graph units) ----------
 W, H = 960, 540
 GTOP, GBOT = 50, 460            # the graph occupies y = 50..460 on screen
@@ -49,6 +50,7 @@ readout = UI.Text("", 520, 16, 20)
 readout.color = "#ffd25a"
 menu_btn = UI.Button("Menu", 840, 8, 110, 34)
 fullscreen_btn = UI.Button("Fullscreen", 710, 8, 120, 34)
+projects_btn = UI.Button("Projects", 580, 8, 120, 34)
 
 bottom = UI.Frame(0, GBOT, W, H - GBOT)
 bottom.bg = "panel"
@@ -61,7 +63,7 @@ reset_btn = UI.Button("Reset", 686, 494, 100, 38)
 next_btn = UI.Button("Next level", 796, 494, 148, 38)
 next_btn.visible = False
 Theme.Set("modern")
-for _b, _c in ((menu_btn, "#495057"), (drive_btn, "#2f9e44"), (reset_btn, "#868e96"), (next_btn, "#1971c2")):
+for _b, _c in ((projects_btn, "#495057"), (menu_btn, "#495057"), (drive_btn, "#2f9e44"), (reset_btn, "#868e96"), (next_btn, "#1971c2")):
     _b.bg = _c
     _b.color = "white"
 
@@ -76,6 +78,11 @@ for i, lv in enumerate(LEVELS):
     b.bg = "#1971c2"
     b.color = "white"
     b.on_click = (lambda n: lambda: start_level(n))(i)
+endless_b = UI.Button("Endless", 350, 500,250,50)
+endless_b.bg = "#1971c2"
+endless_b.color = "white"
+back_b = UI.Button("Back to Strife Menu", 20,20,250,50)
+back_b.on_click = Projects.Home
 
 def layout_window():
     global W, H, GTOP, GBOT, OY, OX, SCALE, CAMERA_READY
@@ -88,7 +95,7 @@ def layout_window():
         CAMERA_READY = True
     top.w = bottom.w = W
     readout.x = max(250, W - 430)
-    fullscreen_btn.x, menu_btn.x = W - 260, W - 130
+    projects_btn.x, fullscreen_btn.x, menu_btn.x = W - 390, W - 260, W - 130
     bottom.y, bottom.h = GBOT, H - GBOT
     msg.y, ylab.y = GBOT + 8, H - 43
     inp.y = drive_btn.y = reset_btn.y = next_btn.y = H - 46
@@ -97,7 +104,7 @@ def layout_window():
     if S["f"] is not None:
         S["ys"] = [None if (v := safe_eval(S["f"], to_x(px))) is None else OY - v * SCALE for px in range(W)]
     in_game = Page.Current() == "Game"
-    for widget in (top, bottom, title, readout, menu_btn, fullscreen_btn, msg, ylab, inp, drive_btn, reset_btn, next_btn):
+    for widget in (top, bottom, title, readout, projects_btn, menu_btn, fullscreen_btn, msg, ylab, inp, drive_btn, reset_btn, next_btn):
         widget.visible = in_game
 
 
@@ -202,6 +209,7 @@ reset_btn.on_click = lambda: (setattr(inp, "text", ""), rebuild_curve())
 next_btn.on_click = lambda: start_level(min(S["level"] + 1, len(LEVELS) - 1))
 menu_btn.on_click = lambda: Page.Open("Menu")
 fullscreen_btn.on_click = Window.toggle_fullscreen
+projects_btn.on_click = Projects.Home
 layout_window()
 
 

@@ -229,6 +229,8 @@ class Engine:
 
         page = SimpleNamespace(Open=page_open, Close=page_close, Current=lambda: self.current)
 
+        projects = SimpleNamespace(Home=self.build_hub)
+
         def tween(obj, prop, target, seconds=0.4, ease="out", on_done=None):
             self.tweens.append([obj, prop, float(getattr(obj, prop)), float(target),
                                 max(seconds, 0.001), 0.0, EASE.get(ease, EASE["out"]), on_done])
@@ -292,6 +294,7 @@ class Engine:
 
         return {"UI": ui, "Page": page, "Tween": tween, "Storage": storage, "Assets": assets,
                 "Input": inp, "Draw": draw, "After": after, "Overlaps": overlaps,
+                "Projects": projects,
                 "Font": font, "Theme": theme, "Window": window,
                 "Quit": lambda: setattr(self, "quitting", True)}
 

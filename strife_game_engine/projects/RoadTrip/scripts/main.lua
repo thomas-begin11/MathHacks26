@@ -6,7 +6,7 @@ if not bombBox then
   error('Could not find "BombBox"; open the matching GameBD layout.')
 end
 
-local duration = 150
+local duration = 40
 local elapsed = 0
 local timer = duration
 local launchX, launchY = 100, 259 -- Fixed at the center of the builder's launcher.
@@ -22,31 +22,17 @@ local touchedCount = 0
 local won = false
 local expired = false
 local functionInput
-local layoutScale, layoutX, layoutY = 1, 0, 0
-local layoutWidth, layoutHeight = 0, 0
-local layoutItems = {}
-local function remember(widget)
-  local geometry = {widget = widget, x = widget.x, y = widget.y,
-                    w = widget.w, h = widget.h, size = widget.size}
-  table.insert(layoutItems, geometry)
-  return geometry
-end
-remember(bombBox)
-remember(UI.Get("Launcher"))
-remember(UI.Get("BombInstructions"))
 
 -- The builder layout copy supplied with this script adds these IDs to only the
 -- four colored targets and their glow frames. Their existing sizes/styles stay.
 local colors = {"red", "yellow", "blue", "green"}
-local targets, glows, targetGeometry, glowGeometry = {}, {}, {}, {}
+local targets, glows = {}, {}
 for _, color in ipairs(colors) do
   targets[color] = UI.Get("Target" .. color:gsub("^%l", string.upper))
   glows[color] = UI.Get("Glow" .. color:gsub("^%l", string.upper))
   if not targets[color] or not glows[color] then
     error("Missing target/glow IDs in GameBD.json for color: " .. color)
   end
-  targetGeometry[color] = remember(targets[color])
-  glowGeometry[color] = remember(glows[color])
 end
 
 local title = UI.Text("Timer: " .. timer, 60, 13, 36)
@@ -55,22 +41,20 @@ local redTitle = UI.Text(title.text, 60, 13, 36)
 redTitle.color, redTitle.alpha, redTitle.z = "#ff0000", 0, 5
 local status = UI.Text("Enter a function through (0, 0), then fire.", 330, 20, 16)
 status.color, status.z = "#d1d5db", 4
-remember(title); remember(redTitle); remember(status)
 
 -- Cache the Strife API function once; repeated UI.Frame lookups from Lua can
 -- otherwise resolve to a Widget proxy instead of the constructor.
 local createFrame = UI.Frame
-local function frame(x, y, w, h, color, z, dynamic)
+local createImage = UI.Image
+local function frame(x, y, w, h, color, z)
   local widget = createFrame(x, y, w, h)
   widget.bg, widget.z, widget.rounding = color, z, 0
-  if not dynamic then remember(widget) end
   return widget
 end
 
 local function gridText(value, x, y)
   local widget = UI.Text(value, x, y, 11)
   widget.color, widget.z = "#8b98a9", -2
-  remember(widget)
   return widget
 end
 
@@ -101,18 +85,28 @@ end
 gridText("x", boxRight - 14, boxBottom - 15)
 gridText("y", launchX + 5, bombBox.y + 3)
 
--- Same obstacle field and rows as your existing game.
+-- Bombs replace the old square obstacle field. They remain regular widgets,
+-- so the existing projectile collision and random-row logic still apply.
 local topRowObstacles, midRowObstacles, bottomRowObstacles = {}, {}, {}
 local allObstacles = {topRowObstacles, midRowObstacles, bottomRowObstacles}
+local bbWidth = bombBox.w - 140
+local bombHitboxInset = 10
+local explosionFrameCount = 24
+local explosionFrameSeconds = 0.045
 local function makeRow(row, y)
-  for i = 1, 4 do
-    local obstacle = frame(220 + 140 * (i - 1), y, 70, 70, "panel", -1)
+  for i = 1, math.floor(bbWidth / 130) do
+    local obstacle = createImage("bomb.png", 50 + math.floor(bbWidth / 4) * i, y, 0.14)
+    obstacle.z = -1
     table.insert(row, obstacle)
   end
 end
 makeRow(topRowObstacles, 110)
 makeRow(midRowObstacles, 220)
 makeRow(bottomRowObstacles, 330)
+
+-- The launcher is the graph origin, so place the wirecutter directly there.
+local wirecutter = createImage("Wirecutter.png", launchX - 25, launchY - 29, 0.20)
+wirecutter.z = 2.5
 
 -- A small, safe expression parser: no Lua code is executed from the input.
 -- Supported: x, pi, e; + - * / % ^; parentheses and implicit multiplication;
@@ -300,7 +294,7 @@ local function stopShot()
 end
 
 local projectile = frame(launchX - projectileRadius, launchY - projectileRadius,
-                         projectileRadius * 2, projectileRadius * 2, "#ffe066", 2, true)
+                         projectileRadius * 2, projectileRadius * 2, "#ffe066", 2)
 projectile.rounding = 1
 projectile.visible = false
 
@@ -324,10 +318,8 @@ local function shuffleTargets()
     slots[i], slots[j] = slots[j], slots[i]
   end
   for i, color in ipairs(colors) do
-    targetGeometry[color].y = slots[i]
-    glowGeometry[color].y = slots[i] + glowOffsetY[color]
-    targets[color].y = layoutY + slots[i] * layoutScale
-    glows[color].y = layoutY + (slots[i] + glowOffsetY[color]) * layoutScale
+    targets[color].y = slots[i]
+    glows[color].y = slots[i] + glowOffsetY[color]
   end
 end
 
@@ -422,20 +414,47 @@ local function obstacleAt(x, y)
   for _, row in ipairs(allObstacles) do
     for _, obstacle in ipairs(row) do
       if obstacle.visible and obstacle.alpha > 0.5
-          and x + projectileRadius > obstacle.x and x - projectileRadius < obstacle.x + obstacle.w
-          and y + projectileRadius > obstacle.y and y - projectileRadius < obstacle.y + obstacle.h then
-        return true
+          and x + projectileRadius > obstacle.x + bombHitboxInset
+          and x - projectileRadius < obstacle.x + obstacle.w - bombHitboxInset
+          and y + projectileRadius > obstacle.y + bombHitboxInset
+          and y - projectileRadius < obstacle.y + obstacle.h - bombHitboxInset then
+        return obstacle
       end
     end
   end
-  return false
+  return nil
+end
+
+local function explodeBomb(bomb)
+  -- A bomb disappears as the explosion sprite takes its place. Restart brings
+  -- all randomized bombs back for the next round.
+  bomb.visible = false
+  local frames = {}
+  for i = 0, explosionFrameCount - 1 do
+    local name = string.format("explosion_frame_%02d.png", i)
+    local frame = createImage(name, bomb.x + 3, bomb.y - 6, 0.35)
+    frame.z, frame.visible = 3, i == 0
+    table.insert(frames, frame)
+  end
+
+  local current = 1
+  local function showNextFrame()
+    frames[current].visible = false
+    current = current + 1
+    if current <= #frames then
+      frames[current].visible = true
+      After(explosionFrameSeconds, showNextFrame)
+    else
+      for _, frame in ipairs(frames) do UI.Destroy(frame) end
+    end
+  end
+  After(explosionFrameSeconds, showNextFrame)
 end
 
 local function addTrailPoint(x, y)
   local dx, dy = x - lastTrailX, y - lastTrailY
-  if dx * dx + dy * dy < 16 * layoutScale * layoutScale or #trail >= 350 then return end
-  local point = frame(x - 2 * layoutScale, y - 2 * layoutScale,
-                      5 * layoutScale, 5 * layoutScale, "#4ade80", -0.5, true)
+  if dx * dx + dy * dy < 16 or #trail >= 350 then return end
+  local point = frame(x - 2, y - 2, 5, 5, "#4ade80", -0.5)
   table.insert(trail, point)
   lastTrailX, lastTrailY = x, y
 end
@@ -487,9 +506,11 @@ local function moveProjectile(dt)
       status.text = "The function left the arena."
       return
     end
-    if obstacleAt(x, y) then
+    local bomb = obstacleAt(x, y)
+    if bomb then
       stopShot()
       projectile.visible = false
+      explodeBomb(bomb)
       elapsed = math.min(duration, elapsed + 5)
       setTimerFromElapsed()
       if timer > 0 then status.text = "Obstacle hit: 5 seconds lost. Try another function." end
@@ -515,7 +536,7 @@ end
 local function shuffleObstacles()
   for _, row in ipairs(allObstacles) do
     for _, obstacle in ipairs(row) do
-      obstacle.alpha = 0
+      obstacle.visible, obstacle.alpha = true, 0
       After(0.5, function()
         if math.random(1, 3) == 3 then obstacle.alpha = 1 end
       end)
@@ -579,46 +600,11 @@ functionInput.z = 6
 local fireButton = makeButton("Fire", 438, 82, fire, "#2f9e44")
 local clearButton = makeButton("Clear", 530, 82, clearShot, "#868e96")
 local restartButton = makeButton("Restart", 622, 90, restartRound, "#1971c2")
-restartButton.id = "BombRestart"
 local backButton = makeButton("Back", 820, 110, backToModes, "#495057")
 functionInput.on_submit = function() fire() end
-for _, widget in ipairs({yLabel, functionInput, fireButton, clearButton, restartButton, backButton}) do
-  remember(widget)
-end
-
-local function layoutBomb()
-  local width, height = Window.width(), Window.height()
-  if width == layoutWidth and height == layoutHeight then return end
-  local oldScale, oldX, oldY = layoutScale, layoutX, layoutY
-  layoutScale = math.min(width / 960, height / 540)
-  layoutX, layoutY = (width - 960 * layoutScale) / 2, (height - 540 * layoutScale) / 2
-  layoutWidth, layoutHeight = width, height
-  local function convertX(x) return layoutX + (x - oldX) / oldScale * layoutScale end
-  local function convertY(y) return layoutY + (y - oldY) / oldScale * layoutScale end
-  shot.x, shot.y = convertX(shot.x), convertY(shot.y)
-  lastTrailX, lastTrailY = convertX(lastTrailX), convertY(lastTrailY)
-  for _, point in ipairs(trail) do
-    point.x, point.y = convertX(point.x), convertY(point.y)
-    point.w, point.h = point.w / oldScale * layoutScale, point.h / oldScale * layoutScale
-  end
-  for _, item in ipairs(layoutItems) do
-    local widget = item.widget
-    widget.x, widget.y = layoutX + item.x * layoutScale, layoutY + item.y * layoutScale
-    widget.w, widget.h = item.w * layoutScale, item.h * layoutScale
-    widget.size = item.size * layoutScale
-  end
-  launchX, launchY = layoutX + 100 * layoutScale, layoutY + 259 * layoutScale
-  targetPlane, graphScale = layoutX + 786 * layoutScale, 50 * layoutScale
-  shotSpeed, projectileRadius = 300 * layoutScale, 4 * layoutScale
-  boxRight, boxBottom = bombBox.x + bombBox.w, bombBox.y + bombBox.h
-  projectile.x, projectile.y = shot.x - projectileRadius, shot.y - projectileRadius
-  projectile.w, projectile.h = projectileRadius * 2, projectileRadius * 2
-end
-layoutBomb()
 
 function on_update(dt)
   if Page.Current() ~= "GameBD" then return end
-  layoutBomb()
   if not won and timer > 0 then
     elapsed = math.min(duration, elapsed + dt)
     setTimerFromElapsed()

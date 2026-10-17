@@ -165,6 +165,7 @@ class Engine:
         self.lua = None
         self.save = {}
         self.edit, self.sel, self.drag, self.typing = False, None, None, None
+        self.input_drag = None
         self.loaded_layouts, self.page_tags = set(), {}
         self.status, self.status_t = "", 0.0
         self.fonts, self.default_font, self.theme = {}, "", "classic"
@@ -311,7 +312,31 @@ class Engine:
     def _input(self, add, placeholder, x, y, w, h):
         wd = Widget("input", x, y, w, h)
         wd.placeholder = placeholder
+        wd.cursor = wd.anchor = 0
+        wd.last_click = -1.0
         return add(wd)
+
+    def input_index_at(self, w, mouse_x):
+        """Return the insertion point closest to a mouse position in an input."""
+        text = str(w.text)
+        target = mouse_x - w.x - 8
+        for index in range(len(text) + 1):
+            width = self.text_w(w, text[:index], 20)
+            if index == len(text) or target < (width + self.text_w(w, text[:index + 1], 20)) / 2:
+                return index
+        return len(text)
+
+    @staticmethod
+    def input_selection(w):
+        return min(w.anchor, w.cursor), max(w.anchor, w.cursor)
+
+    def focus_input(self, w, mouse_x, double_click=False):
+        self.typing, self.input_drag = (w, "text"), None if double_click else w
+        if double_click:
+            w.anchor, w.cursor = 0, len(str(w.text))
+        else:
+            w.cursor = self.input_index_at(w, mouse_x)
+            w.anchor = w.cursor
 
     def _draw_image(self, name, x, y, scale, alpha):
         tex = self._tex(name)
@@ -614,10 +639,54 @@ class Engine:
         if not self.typing:
             return False
         w, attr = self.typing
-        s = str(getattr(w, attr)) + "".join(c for c in chars if c.isprintable())
-        if rl.is_key_pressed(rl.KEY_BACKSPACE) or rl.is_key_pressed_repeat(rl.KEY_BACKSPACE):
-            s = s[:-1]
-        setattr(w, attr, s)
+        if getattr(w, "kind", None) == "input" and attr == "text":
+            s = str(w.text)
+            w.cursor = max(0, min(w.cursor, len(s)))
+            w.anchor = max(0, min(w.anchor, len(s)))
+            start, end = self.input_selection(w)
+            mod = any(rl.is_key_down(k) for k in (rl.KEY_LEFT_CONTROL, rl.KEY_RIGHT_CONTROL,
+                                                   rl.KEY_LEFT_SUPER, rl.KEY_RIGHT_SUPER))
+            shift = rl.is_key_down(rl.KEY_LEFT_SHIFT) or rl.is_key_down(rl.KEY_RIGHT_SHIFT)
+            repeat = lambda key: rl.is_key_pressed(key) or rl.is_key_pressed_repeat(key)
+
+            if mod and rl.is_key_pressed(rl.KEY_A):
+                w.anchor, w.cursor = 0, len(s)
+            elif repeat(rl.KEY_LEFT) or repeat(rl.KEY_RIGHT):
+                delta = -1 if (repeat(rl.KEY_LEFT)) else 1
+                if not shift and start != end:
+                    w.cursor = w.anchor = start if delta < 0 else end
+                else:
+                    w.cursor = max(0, min(len(s), w.cursor + delta))
+                    if not shift:
+                        w.anchor = w.cursor
+            elif rl.is_key_pressed(rl.KEY_HOME):
+                w.cursor = 0
+                if not shift: w.anchor = w.cursor
+            elif rl.is_key_pressed(rl.KEY_END):
+                w.cursor = len(s)
+                if not shift: w.anchor = w.cursor
+            elif repeat(rl.KEY_BACKSPACE):
+                if start != end:
+                    s, w.cursor = s[:start] + s[end:], start
+                elif w.cursor > 0:
+                    s, w.cursor = s[:w.cursor - 1] + s[w.cursor:], w.cursor - 1
+                w.anchor = w.cursor
+            elif repeat(rl.KEY_DELETE):
+                if start != end:
+                    s, w.cursor = s[:start] + s[end:], start
+                elif w.cursor < len(s):
+                    s = s[:w.cursor] + s[w.cursor + 1:]
+                w.anchor = w.cursor
+            elif chars:
+                typed = "".join(c for c in chars if c.isprintable())
+                s = s[:start] + typed + s[end:]
+                w.cursor = w.anchor = start + len(typed)
+            w.text = s
+        else:
+            s = str(getattr(w, attr)) + "".join(c for c in chars if c.isprintable())
+            if rl.is_key_pressed(rl.KEY_BACKSPACE) or rl.is_key_pressed_repeat(rl.KEY_BACKSPACE):
+                s = s[:-1]
+            setattr(w, attr, s)
         if w is self.newproj and rl.is_key_pressed(rl.KEY_TAB):
             w.lang = "py" if w.lang == "lua" else "lua"
         if rl.is_key_pressed(rl.KEY_ENTER):
@@ -638,6 +707,7 @@ class Engine:
                     self.status, self.status_t = "Use #rrggbb or a color name; kept the old color", 3.0
             self.typing_old = None
         self.typing = None
+        self.input_drag = None
 
     # ---------- builder mode ----------
     def spawn(self, kind):
@@ -862,12 +932,20 @@ class Engine:
                 w.hover = (not hit) and w.contains(mx, my)
                 if w.hover and clicked:
                     if w.kind == "input":
-                        self.typing = (w, "text")
+                        now = rl.get_time()
+                        self.focus_input(w, mx, now - w.last_click < 0.35)
+                        w.last_click = now
                     elif w.on_click:
                         self.safe(w.on_click)
                 hit = hit or w.hover
+            if self.input_drag:
+                if rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
+                    self.input_drag.cursor = self.input_index_at(self.input_drag, mx)
+                else:
+                    self.input_drag = None
             if clicked and self.typing and self.typing[0].kind == "input" and not self.typing[0].hover:
                 self.typing = None
+                self.input_drag = None
 
         for tw in self.tweens[:]:
             obj, prop, start, target, dur, t, ease, done = tw
@@ -917,9 +995,19 @@ class Engine:
                     rl.draw_rectangle_lines(int(w.x), int(w.y), int(w.w), int(w.h), edge)
                 has_text = bool(w.text) or focused
                 shown = str(w.text) if has_text else str(w.placeholder)
-                cursor = "|" if focused and int(rl.get_time() * 2) % 2 == 0 else ""
-                self.draw_str(w, shown + cursor, w.x + 8, w.y + (w.h - 20) / 2, 20,
-                              color(w.color if has_text else "gray", w.alpha))
+                tx, ty = w.x + 8, w.y + (w.h - 20) / 2
+                if focused:
+                    cursor = max(0, min(getattr(w, "cursor", len(w.text)), len(w.text)))
+                    anchor = max(0, min(getattr(w, "anchor", cursor), len(w.text)))
+                    start, end = min(anchor, cursor), max(anchor, cursor)
+                    if start != end:
+                        sx = tx + self.text_w(w, str(w.text)[:start], 20)
+                        ex = tx + self.text_w(w, str(w.text)[:end], 20)
+                        rl.draw_rectangle(int(sx), int(w.y + 5), max(1, int(ex - sx)), int(w.h - 10), color("blue", 0.65))
+                    if int(rl.get_time() * 2) % 2 == 0:
+                        cx = tx + self.text_w(w, str(w.text)[:cursor], 20)
+                        rl.draw_rectangle(int(cx), int(w.y + 7), 2, int(w.h - 14), color("white"))
+                self.draw_str(w, shown, tx, ty, 20, color(w.color if has_text else "gray", w.alpha))
             elif w.kind == "image":
                 self._draw_image(w.image, w.x, w.y, w.scale, w.alpha)
 

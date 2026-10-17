@@ -75,7 +75,7 @@ for i, lv in enumerate(LEVELS):
     b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 250 + i * 62, 460, 50)
     b.bg, b.color = "#1971c2", "white"
     b.on_click = (lambda n: lambda: start_level(n))(i)
-endless_b = UI.Button("Endless", 350, 500, 250, 50); endless_b.bg, endless_b.color = "#1971c2", "white"
+endless_b = UI.Button("Endless", 350, 900, 250, 50); endless_b.bg, endless_b.color = "#1971c2", "white"
 back_b = UI.Button("Back to Strife Menu", 20, 20, 250, 50); back_b.on_click = Projects.Home
 
 

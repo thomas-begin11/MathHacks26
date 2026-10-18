@@ -1,6 +1,6 @@
-# MathHacks26 — Strife! and RoadTrip
+# MathHacks26 — Strife! and Function Junction
 
-This repository contains **Strife!**, a small Python game engine, and its main educational game project, **RoadTrip: Function Junction**. Players enter functions to draw a road, drive a car across the graph, avoid obstacles, and reach a checkpoint.
+This repository contains **Strife!**, a small Python game engine, and its main educational game project, **Function Junction**. Players enter functions to draw a road, drive a car across the graph, avoid obstacles, and reach a checkpoint.
 
 ## Run the project
 

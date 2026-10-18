@@ -81,9 +81,9 @@ for i, letter in enumerate("STRIFE!"):
 
 Page.Open("Menu")
 menu_bg = UI.Frame(0, 0, W, H); menu_bg.bg = "#ffffff"
-menu_title = UI.Text("STRIFE!", 42, -145, 78); menu_title.color = "#212529"
+menu_title = UI.Text("Function Junction", 42, -145, 78); menu_title.color = "#212529"
 menu_subtitle = UI.Text("Choose a game mode", 46, -60, 22); menu_subtitle.color = "#6c757d"
-fj_mode_btn = UI.Button("Function Junction", W + 20, 225, 290, 64)
+fj_mode_btn = UI.Button("Levels", W + 20, 225, 290, 64)
 fj_mode_btn.bg, fj_mode_btn.color = "#1971c2", "white"
 fj_mode_btn.on_click = lambda: Page.Open("FunctionJunctionMenu")
 bd_mode_btn = UI.Button("Bomb Defusal", W + 20, 310, 290, 64)
@@ -120,6 +120,8 @@ Page.Open("Menu")
 MENU_TITLE_Y = 62
 menu_hovering = False
 menu_hover_time = 0.0
+menu_entering = False
+menu_targets = {}
 
 
 def start_menu_hover():
@@ -127,19 +129,32 @@ def start_menu_hover():
     menu_hovering, menu_hover_time = True, 0.0
 
 
+def finish_menu_entrance():
+    global menu_entering
+    menu_entering = False
+    start_menu_hover()
+
+
 def show_main_menu():
-    global menu_hovering
+    global menu_hovering, menu_entering
     menu_hovering = False
     Page.Open("Menu")
-    menu_title.x, menu_title.y = 42, -145
-    menu_subtitle.x, menu_subtitle.y = 46, -60
-    fj_mode_btn.x, bd_mode_btn.x, mode_endless_btn.x = W + 20, W + 20, W + 20
-    Tween(menu_title, "y", MENU_TITLE_Y, .62, "out", start_menu_hover)
-    Tween(menu_subtitle, "y", 154, .62, "out")
-    menu_x = W - 345
-    Tween(fj_mode_btn, "x", menu_x, .62, "out")
-    Tween(bd_mode_btn, "x", menu_x, .74, "out")
-    Tween(mode_endless_btn, "x", menu_x, .86, "out")
+    # Calculate the centered landing positions, then place the widgets just
+    # off-screen so the title enters from above and buttons enter from right.
+    menu_entering = False
+    layout_window()
+    menu_entering = True
+    title_x, title_y = menu_targets["title"]
+    subtitle_x, subtitle_y = menu_targets["subtitle"]
+    menu_title.x, menu_title.y = title_x, -menu_title.size - 24
+    menu_subtitle.x, menu_subtitle.y = subtitle_x, -menu_subtitle.size - 24
+    for button, (_, target_y) in zip((fj_mode_btn, bd_mode_btn, mode_endless_btn), menu_targets["buttons"]):
+        button.x, button.y = W + 24, target_y
+    Tween(menu_title, "y", title_y, .62, "out")
+    Tween(menu_subtitle, "y", subtitle_y, .62, "out")
+    for delay, button, (target_x, _) in zip((.62, .74, .86), (fj_mode_btn, bd_mode_btn, mode_endless_btn), menu_targets["buttons"]):
+        Tween(button, "x", target_x, delay, "out")
+    After(.9, finish_menu_entrance)
 
 
 def finish_intro():
@@ -168,13 +183,32 @@ def all_game_widgets():
 
 
 def layout_window():
-    global W, H, GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
+    global W, H, GTOP, GBOT, OX, OY, SCALE, CAMERA_READY, menu_targets
     old_w, old_h = W, H
     W, H = Window.width(), Window.height()
     intro_bg.w, intro_bg.h = W, H
     menu_bg.w, menu_bg.h = W, H
-    if (W, H) != (old_w, old_h):
-        for button in (fj_mode_btn, bd_mode_btn, mode_endless_btn): button.x = W - 345
+    # Center the title, subtitle, and all three mode buttons as one fixed menu
+    # group instead of anchoring the title left and the buttons right.
+    menu_button_width = min(360, max(260, W - 64))
+    menu_button_height, menu_gap = 64, 18
+    menu_title.size = min(78, max(46, round(W * .04)))
+    menu_height = menu_title.size + 18 + 24 + 42 + menu_button_height * 3 + menu_gap * 2
+    menu_top = max(24, (H - menu_height) / 2)
+    menu_left = (W - menu_button_width) / 2
+    menu_targets = dict(
+        title=(W / 2 - menu_title.size * 5.1, menu_top),
+        subtitle=(W / 2 - 112, menu_top + menu_title.size + 18),
+        buttons=[(menu_left, menu_top + menu_title.size + 60 + index * (menu_button_height + menu_gap))
+                 for index in range(3)],
+    )
+    if not menu_entering:
+        menu_title.x, menu_title.y = menu_targets["title"]
+        menu_subtitle.x, menu_subtitle.y = menu_targets["subtitle"]
+        for button, (button_x, button_y) in zip((fj_mode_btn, bd_mode_btn, mode_endless_btn), menu_targets["buttons"]):
+            button.x, button.y = button_x, button_y
+    for button in (fj_mode_btn, bd_mode_btn, mode_endless_btn):
+        button.w, button.h = menu_button_width, menu_button_height
     columns = 2 if H < 760 else 1
     rows = math.ceil(len(level_buttons) / columns)
     column_width = min(560, (W - 40) / columns)
@@ -549,7 +583,7 @@ def on_update(dt):
     layout_window()
     if Page.Current() == "Menu" and menu_hovering:
         menu_hover_time += dt
-        menu_title.y = MENU_TITLE_Y + math.sin(menu_hover_time * 1.7) * 4
+        menu_title.y = menu_targets["title"][1] + math.sin(menu_hover_time * 1.7) * 4
     if Page.Current() != "Game": return
     update_camera(); refresh_curve()
     if S["mode"] != "driving": return
@@ -661,8 +695,10 @@ def on_draw():
     fx, fy = to_px(*goal)
     dotted_box(fx - marker / 2, fy - marker / 2, marker, marker, "#2f9e44")
     draw_flag(fx, fy)
-    cx, cy = to_px(S["cx"], S["cy"])
-    dotted_box(cx - marker / 2, cy - marker / 2, marker, marker, "#f08c00")
+    # The orange marker identifies where this route began; the car itself is
+    # drawn separately below and is the only element that moves while driving.
+    start_x, start_y = to_px(*start)
+    dotted_box(start_x - marker / 2, start_y - marker / 2, marker, marker, "#f08c00")
     if S["mode"] == "crashed" and S["crash"]:
         cx, cy = to_px(*S["crash"]); Draw.text("X", cx - 9, cy - 22, 34, "#c92a2a")
     else:

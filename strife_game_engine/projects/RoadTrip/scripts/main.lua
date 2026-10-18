@@ -22,14 +22,28 @@ local touchedCount = 0
 local won = false
 local expired = false
 local functionInput
+local layoutScale, layoutX, layoutY = 1, 0, 0
+local layoutWidth, layoutHeight = 0, 0
+local layoutItems, layoutById = {}, {}
+local function remember(widget)
+  local geometry = {widget = widget, x = widget.x, y = widget.y,
+                    w = widget.w, h = widget.h, size = widget.size, scale = widget.scale}
+  table.insert(layoutItems, geometry)
+  return geometry
+end
+for _, id in ipairs({"BombLayout0", "BombLayout1", "BombBox", "BombLayout3", "BombLayout4", "BombLayout5", "BombLayout6", "TargetRed", "TargetYellow", "TargetBlue", "TargetGreen", "GlowRed", "GlowYellow", "GlowBlue", "GlowGreen", "BombLayout15", "BombLayout16"}) do
+  layoutById[id] = remember(UI.Get(id))
+end
 
 -- The builder layout copy supplied with this script adds these IDs to only the
 -- four colored targets and their glow frames. Their existing sizes/styles stay.
 local colors = {"red", "yellow", "blue", "green"}
-local targets, glows = {}, {}
+local targets, glows, targetGeometry, glowGeometry = {}, {}, {}, {}
 for _, color in ipairs(colors) do
   targets[color] = UI.Get("Target" .. color:gsub("^%l", string.upper))
   glows[color] = UI.Get("Glow" .. color:gsub("^%l", string.upper))
+  targetGeometry[color] = layoutById["Target" .. color:gsub("^%l", string.upper)]
+  glowGeometry[color] = layoutById["Glow" .. color:gsub("^%l", string.upper)]
   if not targets[color] or not glows[color] then
     error("Missing target/glow IDs in GameBD.json for color: " .. color)
   end
@@ -41,20 +55,23 @@ local redTitle = UI.Text(title.text, 60, 13, 36)
 redTitle.color, redTitle.alpha, redTitle.z = "#ff0000", 0, 5
 local status = UI.Text("Enter a function through (0, 0), then fire.", 330, 20, 16)
 status.color, status.z = "#d1d5db", 4
+remember(title); remember(redTitle); remember(status)
 
 -- Cache the Strife API function once; repeated UI.Frame lookups from Lua can
 -- otherwise resolve to a Widget proxy instead of the constructor.
 local createFrame = UI.Frame
 local createImage = UI.Image
-local function frame(x, y, w, h, color, z)
+local function frame(x, y, w, h, color, z, dynamic)
   local widget = createFrame(x, y, w, h)
   widget.bg, widget.z, widget.rounding = color, z, 0
+  if not dynamic then remember(widget) end
   return widget
 end
 
 local function gridText(value, x, y)
   local widget = UI.Text(value, x, y, 11)
-  widget.color, widget.z = "#8b98a9", -2
+  widget.color, widget.z = "#6c757d", -2
+  remember(widget)
   return widget
 end
 
@@ -64,15 +81,15 @@ local boxBottom = bombBox.y + bombBox.h
 for n = math.ceil((bombBox.x - launchX) / 25), math.floor((boxRight - 1 - launchX) / 25) do
   local x = launchX + n * 25
   local major = n % 2 == 0
-  frame(x, bombBox.y, 1, bombBox.h, major and "#414d5e" or "#2b3441", -3)
+  frame(x, bombBox.y, 1, bombBox.h, major and "#dde3ea" or "#edf0f4", -3)
 end
 for n = math.ceil((launchY - boxBottom) / 25), math.floor((launchY - bombBox.y) / 25) do
   local y = launchY - n * 25
   local major = n % 2 == 0
-  frame(bombBox.x, y, bombBox.w, 1, major and "#414d5e" or "#2b3441", -3)
+  frame(bombBox.x, y, bombBox.w, 1, major and "#dde3ea" or "#edf0f4", -3)
 end
-frame(launchX, bombBox.y, 2, bombBox.h, "#a4afbe", -2.5)
-frame(bombBox.x, launchY, bombBox.w, 2, "#a4afbe", -2.5)
+frame(launchX, bombBox.y, 2, bombBox.h, "#495057", -2.5)
+frame(bombBox.x, launchY, bombBox.w, 2, "#495057", -2.5)
 for n = 1, math.floor((targetPlane - launchX) / graphScale) do
   gridText(tostring(n), launchX + n * graphScale - 3, boxBottom - 15)
 end
@@ -94,9 +111,10 @@ local bombHitboxInset = 10
 local explosionFrameCount = 24
 local explosionFrameSeconds = 0.045
 local function makeRow(row, y)
-  for i = 1, math.floor(bbWidth / 130) do
-    local obstacle = createImage("bomb.png", 50 + math.floor(bbWidth / 4) * i, y, 0.14)
+  for i = 1, 4 do
+    local obstacle = createImage("bomb.png", 220 + 140 * (i - 1), y, 0.14)
     obstacle.z = -1
+    remember(obstacle)
     table.insert(row, obstacle)
   end
 end
@@ -107,6 +125,7 @@ makeRow(bottomRowObstacles, 330)
 -- The launcher is the graph origin, so place the wirecutter directly there.
 local wirecutter = createImage("Wirecutter.png", launchX - 25, launchY - 29, 0.20)
 wirecutter.z = 2.5
+remember(wirecutter)
 
 -- A small, safe expression parser: no Lua code is executed from the input.
 -- Supported: x, pi, e; + - * / % ^; parentheses and implicit multiplication;
@@ -294,7 +313,7 @@ local function stopShot()
 end
 
 local projectile = frame(launchX - projectileRadius, launchY - projectileRadius,
-                         projectileRadius * 2, projectileRadius * 2, "#ffe066", 2)
+                         projectileRadius * 2, projectileRadius * 2, "#e8590c", 2, true)
 projectile.rounding = 1
 projectile.visible = false
 
@@ -318,8 +337,10 @@ local function shuffleTargets()
     slots[i], slots[j] = slots[j], slots[i]
   end
   for i, color in ipairs(colors) do
-    targets[color].y = slots[i]
-    glows[color].y = slots[i] + glowOffsetY[color]
+    targetGeometry[color].y = slots[i]
+    glowGeometry[color].y = slots[i] + glowOffsetY[color]
+    targets[color].y = layoutY + slots[i] * layoutScale
+    glows[color].y = layoutY + (slots[i] + glowOffsetY[color]) * layoutScale
   end
 end
 
@@ -414,10 +435,10 @@ local function obstacleAt(x, y)
   for _, row in ipairs(allObstacles) do
     for _, obstacle in ipairs(row) do
       if obstacle.visible and obstacle.alpha > 0.5
-          and x + projectileRadius > obstacle.x + bombHitboxInset
-          and x - projectileRadius < obstacle.x + obstacle.w - bombHitboxInset
-          and y + projectileRadius > obstacle.y + bombHitboxInset
-          and y - projectileRadius < obstacle.y + obstacle.h - bombHitboxInset then
+          and x + projectileRadius > obstacle.x + bombHitboxInset * layoutScale
+          and x - projectileRadius < obstacle.x + obstacle.w - bombHitboxInset * layoutScale
+          and y + projectileRadius > obstacle.y + bombHitboxInset * layoutScale
+          and y - projectileRadius < obstacle.y + obstacle.h - bombHitboxInset * layoutScale then
         return obstacle
       end
     end
@@ -432,7 +453,7 @@ local function explodeBomb(bomb)
   local frames = {}
   for i = 0, explosionFrameCount - 1 do
     local name = string.format("explosion_frame_%02d.png", i)
-    local frame = createImage(name, bomb.x + 3, bomb.y - 6, 0.35)
+    local frame = createImage(name, bomb.x + 3 * layoutScale, bomb.y - 6 * layoutScale, 0.35 * layoutScale)
     frame.z, frame.visible = 3, i == 0
     table.insert(frames, frame)
   end
@@ -453,8 +474,8 @@ end
 
 local function addTrailPoint(x, y)
   local dx, dy = x - lastTrailX, y - lastTrailY
-  if dx * dx + dy * dy < 16 or #trail >= 350 then return end
-  local point = frame(x - 2, y - 2, 5, 5, "#4ade80", -0.5)
+  if dx * dx + dy * dy < 16 * layoutScale * layoutScale or #trail >= 350 then return end
+  local point = frame(x - 2 * layoutScale, y - 2 * layoutScale, 5 * layoutScale, 5 * layoutScale, "#1971c2", -0.5, true)
   table.insert(trail, point)
   lastTrailX, lastTrailY = x, y
 end
@@ -600,11 +621,48 @@ functionInput.z = 6
 local fireButton = makeButton("Fire", 438, 82, fire, "#2f9e44")
 local clearButton = makeButton("Clear", 530, 82, clearShot, "#868e96")
 local restartButton = makeButton("Restart", 622, 90, restartRound, "#1971c2")
+restartButton.id = "BombRestart"
 local backButton = makeButton("Back", 820, 110, backToModes, "#495057")
 functionInput.on_submit = function() fire() end
 
+for _, widget in ipairs({yLabel, functionInput, fireButton, clearButton, restartButton, backButton}) do
+  remember(widget)
+end
+
+local function layoutBomb()
+  local width, height = Window.width(), Window.height()
+  if width == layoutWidth and height == layoutHeight then return end
+  local oldScale, oldX, oldY = layoutScale, layoutX, layoutY
+  layoutScale = math.min(width / 960, height / 540)
+  layoutX, layoutY = (width - 960 * layoutScale) / 2, (height - 540 * layoutScale) / 2
+  layoutWidth, layoutHeight = width, height
+  local function convertX(x) return layoutX + (x - oldX) / oldScale * layoutScale end
+  local function convertY(y) return layoutY + (y - oldY) / oldScale * layoutScale end
+  shot.x, shot.y = convertX(shot.x), convertY(shot.y)
+  lastTrailX, lastTrailY = convertX(lastTrailX), convertY(lastTrailY)
+  for _, point in ipairs(trail) do
+    point.x, point.y = convertX(point.x), convertY(point.y)
+    point.w, point.h = point.w / oldScale * layoutScale, point.h / oldScale * layoutScale
+  end
+  for _, item in ipairs(layoutItems) do
+    local widget = item.widget
+    widget.x, widget.y = layoutX + item.x * layoutScale, layoutY + item.y * layoutScale
+    widget.w, widget.h = item.w * layoutScale, item.h * layoutScale
+    widget.size = item.size * layoutScale
+    if widget.kind == "image" then widget.scale = item.scale * layoutScale end
+  end
+  launchX, launchY = layoutX + 100 * layoutScale, layoutY + 259 * layoutScale
+  targetPlane, graphScale = layoutX + 786 * layoutScale, 50 * layoutScale
+  shotSpeed, projectileRadius = 300 * layoutScale, 4 * layoutScale
+  boxRight, boxBottom = bombBox.x + bombBox.w, bombBox.y + bombBox.h
+  projectile.x, projectile.y = shot.x - projectileRadius, shot.y - projectileRadius
+  projectile.w, projectile.h = projectileRadius * 2, projectileRadius * 2
+end
+layoutBomb()
+
 function on_update(dt)
   if Page.Current() ~= "GameBD" then return end
+  layoutBomb()
   if not won and timer > 0 then
     elapsed = math.min(duration, elapsed + dt)
     setTimerFromElapsed()

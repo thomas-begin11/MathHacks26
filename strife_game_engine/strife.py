@@ -270,7 +270,7 @@ class Engine:
         )
 
         draw = SimpleNamespace(  # only valid inside on_draw()
-            rect=lambda x, y, w, h, c="white": rl.draw_rectangle(int(x), int(y), int(w), int(h), color(c)),
+            rect=lambda x, y, w, h, c="white", alpha=1.0: rl.draw_rectangle(int(x), int(y), int(w), int(h), color(c, alpha)),
             text=lambda t, x, y, size=20, c="white": self.draw_str(None, t, x, y, size, color(c)),
             image=lambda name, x, y, scale=1.0: self._draw_image(name, x, y, scale, 1.0),
         )
@@ -512,10 +512,6 @@ class Engine:
         self.sel = self.drag = self.typing = None
         self.pages, self.current, self.history = {"hub": []}, "hub", []
         ws = self.pages["hub"]
-        ws.append(Widget("text", 330, 40, 0, 44, "Strife!", 44))
-        sub = Widget("text", 330, 100, 0, 18, "Choose a project", 18)
-        sub.color = "gray"
-        ws.append(sub)
         def listing():
             return sorted(d for d in os.listdir(PROJECTS) if os.path.isdir(os.path.join(PROJECTS, d))) \
                 if os.path.isdir(PROJECTS) else []
@@ -523,19 +519,39 @@ class Engine:
         if not names:  # first launch: make one so there is something to open
             self.make_project("Starter", "lua")
             names = listing()
+        # Keep the picker as one centered group so fullscreen and windowed modes
+        # use the same balanced composition.
+        button_w, button_h, gap = 300, 44, 10
+        group_w = button_w
+        group_h = 44 + 18 + 20 + min(7, max(1, len(names))) * (button_h + gap) + 52
+        left = (WIDTH - group_w) / 2
+        top = max(24, (HEIGHT - group_h) / 2)
+        title = Widget("text", 0, 0, 0, 44, "Strife!", 44)
+        title.x = (WIDTH - self.text_w(title, title.text, title.size)) / 2
+        title.y = top
+        ws.append(title)
+        sub = Widget("text", 0, 0, 0, 18, "Choose a project", 18)
+        sub.color = "gray"
+        sub.x = (WIDTH - self.text_w(sub, sub.text, sub.size)) / 2
+        sub.y = top + 60
+        ws.append(sub)
         for i, n in enumerate(names[:7]):
-            b = Widget("button", 330, 130 + i * 52, 300, 44, n)
+            b = Widget("button", left, top + 108 + i * (button_h + gap), button_w, button_h, n)
             b.on_click = lambda n=n: self.open_project(n)
             ws.append(b)
         if len(names) > 7:
-            more = Widget("text", 330, 490, 0, 14, f"+{len(names) - 7} more: python3 strife.py <name>", 14)
+            more = Widget("text", 0, top + 108 + 7 * (button_h + gap) + 4, 0, 14, f"+{len(names) - 7} more: python3 strife.py <name>", 14)
             more.color = "gray"
+            more.x = (WIDTH - self.text_w(more, more.text, more.size)) / 2
             ws.append(more)
-        hint = Widget("text", 330, 510, 0, 13, "In a project: F1 builder, N new project, F2 this list", 13)
+        footer_y = top + 108 + min(7, len(names)) * (button_h + gap) + 10
+        hint = Widget("text", 0, footer_y, 0, 13, "In a project: F1 builder, N new project, F2 this list", 13)
         hint.color = "gray"
+        hint.x = (WIDTH - self.text_w(hint, hint.text, hint.size)) / 2
         ws.append(hint)
-        where = Widget("text", 330, 526, 0, 12, "Files: " + BASE, 12)
+        where = Widget("text", 0, footer_y + 17, 0, 12, "Files: " + BASE, 12)
         where.color = "gray"
+        where.x = (WIDTH - self.text_w(where, where.text, where.size)) / 2
         ws.append(where)
 
     # ---------- layouts (JSON files made by builder mode) ----------

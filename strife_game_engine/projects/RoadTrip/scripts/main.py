@@ -14,12 +14,8 @@ GTOP, GBOT = 50, 460
 SCALE, OX, OY = 60, 60, 420
 CAMERA_READY = False
 SPEED, EPS = 4.0, 0.02
-MARKER_RADIUS = .25
-# Keep a small amount of car clearance without making the collision area feel
-# much larger than the visible tree.
-WALL_HITBOX_PAD = .08
+MARKER_RADIUS = .35
 Y_MIN, Y_MAX = -1.5, 7.0
-TREE_W, TREE_H = 420, 680
 
 def to_px(x, y): return OX + x * SCALE, OY - y * SCALE
 def to_x(px): return (px - OX) / SCALE
@@ -29,7 +25,8 @@ S = dict(level=0, f=None, text="", err="", mode="edit", cx=0.0, cy=0.0,
          crash=None, ys=[], road_ys=[], msg="", kind="info", pan=None, endless=False,
          row_count=1, active=[], history=[], start=(0, 0), drive_end=0, missed_checkpoint=False)
 E = dict(fuel=100, checkpoints=0, goal=(8, 2), start=(0, 0), active=[], history=[],
-         row_count=1, game_over=False, drive_end=0, missed_checkpoint=False, drive_rewards=0)
+         row_count=1, game_over=False, drive_end=0, missed_checkpoint=False, drive_rewards=0,
+         walls=[])
 
 
 def set_msg(text, kind="info"):
@@ -45,6 +42,9 @@ title = UI.Text("", 16, 11, 26); title.color = "white"
 readout = UI.Text("", 520, 16, 20); readout.color = "#ffd25a"
 fuel_readout = UI.Text("", 380, 16, 20); fuel_readout.color = "#8af08a"
 menu_btn = UI.Button("Modes", 840, 8, 110, 34)
+fullscreen_btn = UI.Button("Fullscreen", 710, 8, 120, 34)
+fullscreen_btn.bg, fullscreen_btn.color = "#495057", "white"
+fullscreen_btn.on_click = Window.toggle_fullscreen
 bottom = UI.Frame(0, GBOT, W, H - GBOT); bottom.bg = "panel"
 msg = UI.Text("", 16, 468, 18)
 drive_btn = UI.Button("Drive!", 556, 494, 120, 38)
@@ -88,17 +88,27 @@ fj_mode_btn.bg, fj_mode_btn.color = "#1971c2", "white"
 fj_mode_btn.on_click = lambda: Page.Open("FunctionJunctionMenu")
 bd_mode_btn = UI.Button("Bomb Defusal", W + 20, 310, 290, 64)
 bd_mode_btn.bg, bd_mode_btn.color = "#c92a2a", "white"
-bd_mode_btn.on_click = lambda: Page.Open("GameBD")
+def start_bomb():
+    Page.Open("GameBD")
+    restart = UI.Get("BombRestart")
+    if restart is not None and callable(restart.on_click): restart.on_click()
+
+bd_mode_btn.on_click = start_bomb
+mode_endless_btn = UI.Button("Endless Road", W + 20, 395, 290, 64)
+mode_endless_btn.bg, mode_endless_btn.color = "#2f9e44", "white"
+mode_endless_btn.on_click = lambda: start_endless()
 
 
 # ---------- Function Junction level selector ----------
 Page.Open("FunctionJunctionMenu")
-UI.Text("Function Junction", 300, 40, 48).color = "#ffd25a"
-UI.Text("Choose a level or try Endless mode.", 260, 105, 20).color = "#cfd8e3"
+level_title = UI.Text("Function Junction", 300, 25, 42); level_title.color = "#ffd25a"
+level_hint = UI.Text("Choose a level or try Endless mode.", 260, 80, 20); level_hint.color = "#cfd8e3"
+level_buttons = []
 for i, lv in enumerate(LEVELS):
     b = UI.Button(lv["name"] + "  -  " + lv["concept"], 250, 165 + i * 48, 460, 42)
     b.bg, b.color = "#1971c2", "white"
     b.on_click = (lambda n: lambda: start_level(n))(i)
+    level_buttons.append(b)
 endless_b = UI.Button("Endless", 350, 165 + len(LEVELS) * 48, 250, 42)
 endless_b.bg, endless_b.color = "#194323", "white"
 back_b = UI.Button("Back to modes", 20, 482, 170, 42)
@@ -123,11 +133,13 @@ def show_main_menu():
     Page.Open("Menu")
     menu_title.x, menu_title.y = 42, -145
     menu_subtitle.x, menu_subtitle.y = 46, -60
-    fj_mode_btn.x, bd_mode_btn.x = W + 20, W + 20
+    fj_mode_btn.x, bd_mode_btn.x, mode_endless_btn.x = W + 20, W + 20, W + 20
     Tween(menu_title, "y", MENU_TITLE_Y, .62, "out", start_menu_hover)
     Tween(menu_subtitle, "y", 154, .62, "out")
-    Tween(fj_mode_btn, "x", 615, .62, "out")
-    Tween(bd_mode_btn, "x", 615, .74, "out")
+    menu_x = W - 345
+    Tween(fj_mode_btn, "x", menu_x, .62, "out")
+    Tween(bd_mode_btn, "x", menu_x, .74, "out")
+    Tween(mode_endless_btn, "x", menu_x, .86, "out")
 
 
 def finish_intro():
@@ -151,13 +163,29 @@ def start_intro():
 
 
 def all_game_widgets():
-    return [top, bottom, title, readout, fuel_readout, menu_btn, msg,
+    return [top, bottom, title, readout, fuel_readout, menu_btn, fullscreen_btn, msg,
             drive_btn, reset_btn, next_btn, endless_hint, restart_btn, result_menu_btn] + [w for r in end_rows for w in r]
 
 
 def layout_window():
-    global GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
-    # This Strife build uses a fixed 960x540 window and exposes no Window API.
+    global W, H, GTOP, GBOT, OX, OY, SCALE, CAMERA_READY
+    old_w, old_h = W, H
+    W, H = Window.width(), Window.height()
+    intro_bg.w, intro_bg.h = W, H
+    menu_bg.w, menu_bg.h = W, H
+    if (W, H) != (old_w, old_h):
+        for button in (fj_mode_btn, bd_mode_btn, mode_endless_btn): button.x = W - 345
+    columns = 2 if H < 760 else 1
+    rows = math.ceil(len(level_buttons) / columns)
+    column_width = min(560, (W - 40) / columns)
+    button_height = max(26, min(44, (H - 205) / rows - 8))
+    level_title.x, level_hint.x = W / 2 - 210, W / 2 - 200
+    for i, button in enumerate(level_buttons):
+        column, row = divmod(i, rows)
+        button.x = W / 2 - columns * column_width / 2 + column * column_width + 8
+        button.y, button.w, button.h = 120 + row * (button_height + 8), column_width - 16, button_height
+    endless_b.x, endless_b.y = W / 2 - 125, H - 62
+    back_b.x, back_b.y = 20, 20
     GTOP = max(50, round(H * .09))
     if S["endless"]:
         panel_height = 150 if E["game_over"] else 58 + E["row_count"] * 34
@@ -167,11 +195,14 @@ def layout_window():
     if not CAMERA_READY:
         OX, OY, SCALE, CAMERA_READY = max(60, round(W * .065)), GBOT - 40, 60, True
     top.w = bottom.w = W; bottom.y, bottom.h = GBOT, H - GBOT
-    readout.x, fuel_readout.x = max(250, W - 430), max(170, W - 570)
+    # Keep both readouts clear of the fullscreen and modes buttons, even when
+    # the coordinate values use several digits.
+    readout.x, fuel_readout.x = max(420, W - 560), max(170, W - 720)
     menu_btn.x = W - 130
+    fullscreen_btn.x = W - 260
     in_game, normal = Page.Current() == "Game", not S["endless"]
     for w in all_game_widgets(): w.visible = False
-    for w in (top, bottom, title, readout, fuel_readout, menu_btn, msg): w.visible = in_game
+    for w in (top, bottom, title, readout, fuel_readout, menu_btn, fullscreen_btn, msg): w.visible = in_game
     if in_game:
         msg.y = GBOT + 8
         if S["endless"] and E["game_over"]:
@@ -202,11 +233,25 @@ def update_camera():
     just_pressed = down and not S.get("mouse_down", False)
     S["mouse_down"] = down
     on_graph = 0 <= mx <= W and GTOP <= my <= GBOT
-    if just_pressed and on_graph: S["pan"] = (mx, my, OX, OY)
+    # The header and footer are also safe grab areas.  Controls stay clickable
+    # because a drag can only begin outside visible buttons and text inputs.
+    over_control = any(
+        widget.visible and widget.kind in ("button", "input")
+        and widget.x <= mx <= widget.x + widget.w
+        and widget.y <= my <= widget.y + widget.h
+        for widget in all_game_widgets()
+    )
+    pannable_surface = 0 <= mx <= W and 0 <= my <= H and not over_control
+    if just_pressed and pannable_surface: S["pan"] = (mx, my, OX, OY)
     if S["pan"]:
         if down:
             sx, sy, ox, oy = S["pan"]; OX, OY = ox + mx - sx, oy + my - sy
         else: S["pan"] = None
+    zoom = Input.mouse_wheel() + Input.pinch()
+    if on_graph and zoom:
+        x, y = to_x(mx), (OY - my) / SCALE
+        SCALE = max(24, min(220, SCALE * 1.15 ** zoom))
+        OX, OY = mx - x * SCALE, my + y * SCALE
 
 
 # ---------- Endless constraints and routes ----------
@@ -215,10 +260,16 @@ def parse_constraint(text, variable):
            .replace("≤", "<=").replace("≥", ">="))
     if raw.startswith("{") and raw.endswith("}"): raw = raw[1:-1]
     if raw in (variable + "er", variable + "inr"): return dict(lo=None, hi=None, kind="all")
+    wrapped_all_real = False
     for prefix in (variable + "er|", variable + "inr|"):
         if raw.startswith(prefix):
             raw = raw[len(prefix):]
+            wrapped_all_real = True
             break
+    # In a range field, accept the same wrapped interval syntax even if the
+    # player writes x inside the condition, e.g. {y∈R|1.5<x<3}.  The bounds
+    # still constrain the function's y-value.
+    if wrapped_all_real and variable == "y": raw = raw.replace("x", "y")
     num = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
     match = re.fullmatch(variable + r"=(" + num + ")", raw)
     if match:
@@ -269,8 +320,10 @@ def range_limited_end(f, start, end, range_):
 
 
 def marker_connection(f, domain, range_, car_x, car_y, requested_end):
-    """Find the first forward point where a road touches the half-grid car marker."""
-    start = max(car_x, domain["lo"] if domain["lo"] is not None else car_x)
+    """Find the first point where a road touches the visible car box."""
+    # The car is centered in its marker.  A road can enter through the left
+    # edge of that box, as well as at or to the right of the center.
+    start = max(car_x - MARKER_RADIUS, domain["lo"] if domain["lo"] is not None else car_x - MARKER_RADIUS)
     stop = min(car_x + MARKER_RADIUS, requested_end)
     if start > stop + EPS: return None
     steps = max(1, int(math.ceil((stop - start) / .005)))
@@ -363,10 +416,24 @@ def generate_checkpoint(base_x=None):
     E["goal"] = (base_x + gap, round(random.uniform(0, 5.5) * 2) / 2)
 
 
+def add_endless_obstacle(start_x, goal_x, number):
+    """Add one gentle obstacle for this leg; each three-checkpoint tier grows it."""
+    width = min(1.8, .55 + number * .16)
+    height = min(2.8, .75 + number * .24)
+    left_limit, right_limit = start_x + 1.5, goal_x - width - 1.5
+    left = (left_limit + right_limit) / 2 if right_limit < left_limit else random.uniform(left_limit, right_limit)
+    bottom = random.uniform(Y_MIN + .25, Y_MAX - height - .25)
+    E["walls"].append((left, bottom, left + width, bottom + height))
+
+
+def endless_hits_wall(x, y):
+    return any(x1 <= x <= x2 and y1 <= y <= y2 for x1, y1, x2, y2 in E["walls"])
+
+
 def start_endless():
     S.update(endless=True, f=None, text="", err="", mode="edit", cx=0.0, cy=0.0, crash=None)
     E.update(fuel=100, checkpoints=0, start=(0, 0), active=[], history=[], game_over=False,
-             drive_end=0, missed_checkpoint=False, drive_rewards=0)
+             drive_end=0, missed_checkpoint=False, drive_rewards=0, walls=[])
     S["active"], S["ys"], S["road_ys"] = [], [], []
     clear_endless_rows(); generate_checkpoint(); title.text, fuel_readout.text = "Endless Road", "Fuel: 100"
     endless_hint.text = "Build roads to the flag. Fuel cost is based on each function's domain."
@@ -384,8 +451,8 @@ def start_level(i):
 
 
 def hits_wall(x, y):
-    pad = WALL_HITBOX_PAD
-    return any(x1 - pad < x < x2 + pad and y1 - pad < y < y2 + pad
+    # Draw and collide with the same graph-space rectangle, including its edge.
+    return any(x1 <= x <= x2 and y1 <= y <= y2
                for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"])
 
 
@@ -434,7 +501,12 @@ def finish_normal_route():
 def reach_endless_checkpoint():
     old_goal_x = E["goal"][0]
     E["checkpoints"] += 1; E["fuel"] += 30; E["drive_rewards"] += 1
-    generate_checkpoint(old_goal_x); fuel_readout.text = "Fuel: %.0f" % E["fuel"]
+    generate_checkpoint(old_goal_x)
+    # Checkpoints 3, 6, 9... add one more obstacle. Its dimensions also grow
+    # with each tier so the difficulty increases gradually.
+    if E["checkpoints"] % 3 == 0:
+        add_endless_obstacle(old_goal_x, E["goal"][0], len(E["walls"]) + 1)
+    fuel_readout.text = "Fuel: %.0f" % E["fuel"]
 
 
 def finish_endless_route():
@@ -446,8 +518,9 @@ def finish_endless_route():
         set_msg("The checkpoint is behind the car. Run over after %d checkpoint%s." %
                 (E["checkpoints"], "" if E["checkpoints"] == 1 else "s"), "bad")
     elif E["drive_rewards"]:
-        set_msg("Checkpoint %d reached! +%d fuel. Road ended at x=%g, y=%g." %
-                (E["checkpoints"], 30 * E["drive_rewards"], S["cx"], S["cy"]), "good")
+        obstacle_note = " %d obstacle%s active." % (len(E["walls"]), "" if len(E["walls"]) == 1 else "s") if E["walls"] else ""
+        set_msg("Checkpoint %d reached! +%d fuel. Road ended at x=%g, y=%g.%s" %
+                (E["checkpoints"], 30 * E["drive_rewards"], S["cx"], S["cy"], obstacle_note), "good")
     else:
         set_msg("Road ended at x=%g, y=%g. Build the next road from here." % (S["cx"], S["cy"]), "good")
 
@@ -487,8 +560,11 @@ def on_update(dt):
         x = min(S["cx"] + step, drive_end)
         y = endless_value_at(x, S["active"])
         if y is None: crash(S["cx"], S["cy"], "The road has a gap at x=%.1f." % x); continue
-        if S["endless"] and (y < Y_MIN or y > Y_MAX):
-            crash(x, max(Y_MIN, min(Y_MAX, y)), "The car left the map."); continue
+        if S["endless"]:
+            if y < Y_MIN or y > Y_MAX:
+                crash(x, max(Y_MIN, min(Y_MAX, y)), "The car left the map."); continue
+            if endless_hits_wall(x, y):
+                crash(x, y, "Crashed into an obstacle at x=%.1f." % x); continue
         if not S["endless"] and hits_wall(x, y): crash(x, y, "Crashed into an obstacle at x=%.1f." % x); continue
         S["cx"], S["cy"] = x, y
         if S["endless"]:
@@ -507,20 +583,48 @@ def on_update(dt):
 
 
 # ---------- Drawing ----------
-def box(x, y, w, h, c):
+def box(x, y, w, h, c, alpha=1.0):
     x0, y0, x1, y1 = max(x, 0), max(y, GTOP), min(x + w, W), min(y + h, GBOT)
-    if x1 > x0 and y1 > y0: Draw.rect(x0, y0, x1 - x0, y1 - y0, c)
+    if x1 > x0 and y1 > y0: Draw.rect(x0, y0, x1 - x0, y1 - y0, c, alpha)
+
+
+def dotted_box(x, y, w, h, color):
+    """Tint the graph underneath, with an opaque dotted outline inside the bounds."""
+    box(x, y, w, h, color, .16)
+    thickness = max(1, min(3, round(SCALE * .03)))
+    dot = max(2, min(6, round(SCALE * .06)))
+    for length, horizontal in ((w, True), (h, False)):
+        count = max(1, int(math.ceil(max(0, length - dot) / (dot * 2))))
+        for index in range(count + 1):
+            offset = max(0, length - dot) * index / count
+            if horizontal:
+                box(x + offset, y, min(dot, w), thickness, color)
+                box(x + offset, y + h - thickness, min(dot, w), thickness, color)
+            else:
+                box(x, y + offset, thickness, min(dot, h), color)
+                box(x + w - thickness, y + offset, thickness, min(dot, h), color)
 
 
 def draw_car(px, py):
-    diameter = SCALE * .5
+    diameter = SCALE * MARKER_RADIUS * 2 * .72
     body_h, cabin_w, cabin_h, wheel = diameter * .34, diameter * .56, diameter * .28, diameter * .22
+    # Center the whole silhouette, from the cabin roof to the bottom of the wheels.
+    py += (body_h + cabin_h - wheel * .35) / 2
     box(px - diameter / 2, py - body_h, diameter, body_h, "#e8590c")
     box(px - cabin_w / 2, py - body_h - cabin_h, cabin_w, cabin_h, "#ffa94d")
     box(px - cabin_w * .34, py - body_h - cabin_h * .82, cabin_w * .28, cabin_h * .55, "#d0ebff")
     box(px + cabin_w * .06, py - body_h - cabin_h * .82, cabin_w * .28, cabin_h * .55, "#d0ebff")
     box(px - diameter * .36, py - wheel * .65, wheel, wheel, "#212529")
     box(px + diameter * .14, py - wheel * .65, wheel, wheel, "#212529")
+
+
+def draw_flag(px, py):
+    marker = SCALE * MARKER_RADIUS * 2
+    width, height = marker * .46, marker * .64
+    pole_w = max(1, marker * .05)
+    left, top = px - width / 2, py - height / 2
+    box(left, top, pole_w, height, "#212529")
+    box(left + pole_w, top, width - pole_w, marker * .28, "#2f9e44")
 
 
 def on_draw():
@@ -538,32 +642,27 @@ def on_draw():
         if gy and not gy % every: _, py = to_px(0, gy); Draw.text(str(gy), label_x, py - 8, 14, "#6c757d")
     if S["endless"]:
         start, goal = E["start"], E["goal"]
+        for x1, y1, x2, y2 in E["walls"]:
+            px, py = to_px(x1, y2)
+            dotted_box(px, py, (x2 - x1) * SCALE, (y2 - y1) * SCALE, "#e03131")
     else:
         for x1, y1, x2, y2 in LEVELS[S["level"]]["walls"]:
-            ax, ay = to_px(x1, y2)
-            bx, by = to_px(x2, y1)
-            obstacle_w, obstacle_h = bx - ax, by - ay
-            scale = min(obstacle_w / TREE_W, obstacle_h / TREE_H)
-            image_w, image_h = TREE_W * scale, TREE_H * scale
-            # Upper barriers grow down from the graph's top edge.
-            upper_barrier = (y1 + y2) / 2 > (Y_MIN + Y_MAX) / 2
-            Draw.image(
-                "tree_top.png" if upper_barrier else "tree.png",
-                ax + (obstacle_w - image_w) / 2,
-                ay if upper_barrier else by - image_h,
-                scale,
-            )
+            px, py = to_px(x1, y2)
+            dotted_box(px, py, (x2 - x1) * SCALE, (y2 - y1) * SCALE, "#e03131")
         start, goal = S["start"], LEVELS[S["level"]]["goal"]
     for road in S["road_ys"]:
         for px in range(W - 1):
             a = road[px] if px < len(road) else None; b = road[px + 1] if px + 1 < len(road) else None
-            if a is not None and b is not None: box(px, int(min(a, b)) - 1, 2, int(abs(a - b)) + 3, "#1971c2")
-    marker = SCALE * .5; pole_h, pole_w = marker * 1.5, max(2, marker * .08)
+            if a is not None and b is not None:
+                # Roads already driven become green; the road ahead remains blue.
+                color = "#2f9e44" if to_x(px + 1) <= S["cx"] + EPS else "#1971c2"
+                box(px, int(min(a, b)) - 1, 2, int(abs(a - b)) + 3, color)
+    marker = SCALE * MARKER_RADIUS * 2
     fx, fy = to_px(*goal)
-    box(fx - pole_w / 2, fy - pole_h, pole_w, pole_h, "#212529")
-    box(fx + pole_w / 2, fy - pole_h, marker * .75, marker * .35, "#2f9e44")
-    box(fx - marker / 2, fy - marker / 2, marker, marker, "#2f9e44")
-    sx, sy = to_px(*start); box(sx - marker / 2, sy - marker / 2, marker, marker, "#f08c00")
+    dotted_box(fx - marker / 2, fy - marker / 2, marker, marker, "#2f9e44")
+    draw_flag(fx, fy)
+    cx, cy = to_px(S["cx"], S["cy"])
+    dotted_box(cx - marker / 2, cy - marker / 2, marker, marker, "#f08c00")
     if S["mode"] == "crashed" and S["crash"]:
         cx, cy = to_px(*S["crash"]); Draw.text("X", cx - 9, cy - 22, 34, "#c92a2a")
     else:

@@ -2,11 +2,11 @@
   "widgets": [
     {
       "kind": "frame",
-      "id": "",
-      "x": 1,
-      "y": -4,
-      "w": 969,
-      "h": 59,
+      "id": "BombLayout0",
+      "x": 0,
+      "y": 0,
+      "w": 960,
+      "h": 55,
       "text": "",
       "size": 20,
       "color": "#ffffff",
@@ -22,11 +22,11 @@
     },
     {
       "kind": "frame",
-      "id": "",
-      "x": -5,
+      "id": "BombLayout1",
+      "x": 0,
       "y": 455,
-      "w": 969,
-      "h": 59,
+      "w": 960,
+      "h": 85,
       "text": "",
       "size": 20,
       "color": "#ffffff",
@@ -43,26 +43,26 @@
     {
       "kind": "frame",
       "id": "BombBox",
-      "x": 90,
-      "y": 92,
-      "w": 710,
-      "h": 344,
+      "x": 40,
+      "y": 70,
+      "w": 820,
+      "h": 370,
       "text": "",
       "size": 20,
       "color": "#ffffff",
-      "bg": "#000000",
-      "alpha": 0.23,
+      "bg": "#fbfcfe",
+      "alpha": 1,
       "scale": 1.0,
       "image": null,
       "placeholder": "",
       "font": "",
       "rounding": -1,
-      "z": 0,
+      "z": -4,
       "visible": true
     },
     {
       "kind": "frame",
-      "id": "",
+      "id": "BombLayout3",
       "x": 789,
       "y": 112,
       "w": 10,
@@ -78,11 +78,11 @@
       "font": "",
       "rounding": 0.0,
       "z": 1,
-      "visible": true
+      "visible": false
     },
     {
       "kind": "frame",
-      "id": "",
+      "id": "BombLayout4",
       "x": 790,
       "y": 189,
       "w": 10,
@@ -98,11 +98,11 @@
       "font": "",
       "rounding": 0.0,
       "z": 1,
-      "visible": true
+      "visible": false
     },
     {
       "kind": "frame",
-      "id": "",
+      "id": "BombLayout5",
       "x": 788,
       "y": 271,
       "w": 10,
@@ -118,11 +118,11 @@
       "font": "",
       "rounding": 0.0,
       "z": 1,
-      "visible": true
+      "visible": false
     },
     {
       "kind": "frame",
-      "id": "",
+      "id": "BombLayout6",
       "x": 788,
       "y": 349,
       "w": 10,
@@ -138,7 +138,7 @@
       "font": "",
       "rounding": 0.0,
       "z": 1,
-      "visible": true
+      "visible": false
     },
     {
       "kind": "frame",
@@ -302,7 +302,7 @@
     },
     {
       "kind": "frame",
-      "id": "",
+      "id": "BombLayout15",
       "x": 53,
       "y": 254,
       "w": 47,
@@ -310,7 +310,7 @@
       "text": "",
       "size": 20,
       "color": "#ffffff",
-      "bg": "#ffffff",
+      "bg": "#495057",
       "alpha": 1.0,
       "scale": 1.0,
       "image": null,
@@ -322,14 +322,14 @@
     },
     {
       "kind": "text",
-      "id": "",
+      "id": "BombLayout16",
       "x": 57,
       "y": 239,
       "w": 0,
       "h": 24,
       "text": "y = 0",
       "size": 12,
-      "color": "#ffffff",
+      "color": "#495057",
       "bg": "#34364a",
       "alpha": 1.0,
       "scale": 1.0,
